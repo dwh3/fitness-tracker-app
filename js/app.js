@@ -1,608 +1,519 @@
-// Mobile-Optimized Fitness App JavaScript
+// app.js
 
-// App State
-let appState = {
-    currentPage: 'dashboard',
-    timerInterval: null,
-    timerSeconds: 0,
-    currentWorkout: null,
-    isTimerRunning: false,
-    profile: {
-        name: '',
-        calorieGoal: 500,
-        waterGoal: 8
-    },
-    dailyStats: {
-        calories: 0,
-        workouts: 0,
-        minutes: 0,
-        water: 0
-    },
-    workouts: [],
-    workoutHistory: [],
-    weightHistory: []
-};
+// 1) Redirect to login if no profile selected
+if (!localStorage.getItem('fittrack_current_profile')) {
+    window.location.href = 'login.html';
+}
 
-// Default Workouts
-const defaultWorkouts = [
-    {
-        id: 1,
-        name: "Morning Yoga",
-        type: "flexibility",
-        duration: 30,
-        difficulty: "beginner",
-        calories: 100
-    },
-    {
-        id: 2,
-        name: "HIIT Cardio",
-        type: "hiit",
-        duration: 20,
-        difficulty: "advanced",
-        calories: 250
-    },
-    {
-        id: 3,
-        name: "Upper Body",
-        type: "strength",
-        duration: 45,
-        difficulty: "intermediate",
-        calories: 200
-    },
-    {
-        id: 4,
-        name: "5K Run",
-        type: "cardio",
-        duration: 30,
-        difficulty: "intermediate",
-        calories: 300
-    },
-    {
-        id: 5,
-        name: "Core Blast",
-        type: "strength",
-        duration: 15,
-        difficulty: "beginner",
-        calories: 80
-    },
-    {
-        id: 6,
-        name: "Bike Ride",
-        type: "cardio",
-        duration: 45,
-        difficulty: "intermediate",
-        calories: 350
+// 2) Profile Management Helpers
+function getCurrentProfile() {
+    const profileId = localStorage.getItem('fittrack_current_profile');
+    if (!profileId) {
+        window.location.href = 'login.html';
+        return null;
     }
+    const profiles = JSON.parse(localStorage.getItem('fittrack_profiles') || '[]');
+    const profile = profiles.find(p => p.id === profileId);
+    if (!profile) {
+        window.location.href = 'login.html';
+        return null;
+    }
+    return profile;
+}
+
+function saveCurrentProfile(profileData) {
+    const profiles = JSON.parse(localStorage.getItem('fittrack_profiles') || '[]');
+    const index = profiles.findIndex(p => p.id === profileData.id);
+    if (index > -1) {
+        profiles[index] = profileData;
+        localStorage.setItem('fittrack_profiles', JSON.stringify(profiles));
+    }
+}
+
+function logoutProfile() {
+    localStorage.removeItem('fittrack_current_profile');
+    window.location.href = 'login.html';
+}
+
+// 3) Default Workouts (declare before use)
+const defaultWorkouts = [
+    { id: 1, name: "Morning Yoga", type: "flexibility", duration: 30, difficulty: "beginner", calories: 100 },
+    { id: 2, name: "HIIT Cardio",   type: "hiit",       duration: 20, difficulty: "advanced",   calories: 250 },
+    { id: 3, name: "Upper Body",    type: "strength",   duration: 45, difficulty: "intermediate", calories: 200 },
+    { id: 4, name: "5K Run",        type: "cardio",     duration: 30, difficulty: "intermediate", calories: 300 },
+    { id: 5, name: "Core Blast",    type: "strength",   duration: 15, difficulty: "beginner",   calories:  80 },
+    { id: 6, name: "Bike Ride",     type: "cardio",     duration: 45, difficulty: "intermediate", calories: 350 }
 ];
 
-// Initialize App
+// 4) Unified App State
+let currentProfile = null;
+let appState = {
+    currentPage:    'dashboard',
+    timerInterval:  null,
+    timerSeconds:   0,
+    currentWorkout: null,
+    isTimerRunning: false,
+    profile:        { name: '', calorieGoal: 500, waterGoal: 8 },
+    dailyStats:     { calories: 0, workouts: 0, minutes: 0, water: 0 },
+    workouts:       [],
+    workoutHistory: [],
+    weightHistory:  []
+};
+
+// 5) Single Initialization
 document.addEventListener('DOMContentLoaded', () => {
-    loadState();
+    // Load profile
+    currentProfile = getCurrentProfile();
+    if (!currentProfile) return;
+
+    // Seed state from profile data
+    appState = {
+        ...appState,
+        profile: {
+            name:        currentProfile.name,
+            calorieGoal: currentProfile.data.calorieGoal || 500,
+            waterGoal:   currentProfile.data.waterGoal   || 8
+        },
+        dailyStats:     currentProfile.data.dailyStats     || { calories:0, workouts:0, minutes:0, water:0 },
+        workouts:       currentProfile.data.workouts       || [...defaultWorkouts],
+        workoutHistory: currentProfile.data.workoutHistory || [],
+        weightHistory:  currentProfile.data.weightHistory  || []
+    };
+
+    updateProfileUI();
     initializeApp();
     setupEventListeners();
     registerServiceWorker();
 });
 
-// Load state from localStorage
-function loadState() {
-    const saved = localStorage.getItem('fitnessAppState');
-    if (saved) {
-        const savedState = JSON.parse(saved);
-        appState = { ...appState, ...savedState };
-    } else {
-        appState.workouts = [...defaultWorkouts];
-        saveState();
+// ------------------- Profile UI -------------------
+
+function updateProfileUI() {
+    const welcomeElements = document.querySelectorAll('.welcome-text');
+    welcomeElements.forEach(el => {
+        el.textContent = `Welcome, ${currentProfile.name}!`;
+    });
+    updateSettingsMenu();
+}
+
+function updateSettingsMenu() {
+    const profileSection = `
+        <div id="profileSection" style="background:#f8f9fa;padding:15px;border-radius:12px;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <h5 style="margin:0;color:#1e293b;">${currentProfile.name}</h5>
+                    <small style="color:#64748b;">Active Profile</small>
+                </div>
+                <button onclick="showProfileMenu()" style="background:none;border:none;color:#4F46E5;font-size:20px;">
+                    <i class="bi bi-three-dots-vertical"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    const settingsBody = document.querySelector('#settingsModal .modal-body');
+    if (settingsBody && !document.getElementById('profileSection')) {
+        settingsBody.insertAdjacentHTML('afterbegin', profileSection);
     }
 }
 
-// Save state to localStorage
-function saveState() {
-    localStorage.setItem('fitnessAppState', JSON.stringify(appState));
+function showProfileMenu() {
+    if (confirm('Switch profile?')) {
+        logoutProfile();
+    } else if (confirm('Logout?')) {
+        logoutProfile();
+    }
 }
 
-// Initialize App Components
+// -------------- App Initialization --------------
+
 function initializeApp() {
+    addWelcomeMessage();
     updateDashboard();
     renderWorkouts();
     updateProgress();
     initWeightChart();
-    
-    // Set today's date
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('dateInput').value = today;
-    
-    // Check if running as PWA
+
+    // Pre-fill date input
+    document.getElementById('dateInput').value =
+        new Date().toISOString().split('T')[0];
+
+    // PWA mode
     if (window.matchMedia('(display-mode: standalone)').matches) {
         document.body.classList.add('pwa-mode');
     }
-    
-    // Enable touch feedback
+
     enableTouchFeedback();
 }
 
-// Setup Event Listeners
-function setupEventListeners() {
-    // Form submissions
-    document.getElementById('addWorkoutForm').addEventListener('submit', handleAddWorkout);
-    document.getElementById('weightForm').addEventListener('submit', handleWeightLog);
-    document.getElementById('profileForm').addEventListener('submit', handleProfileSave);
-    
-    // Search
-    document.getElementById('workoutSearch').addEventListener('input', handleSearch);
-    
-    // Prevent modal close on content tap
-    document.querySelectorAll('.modal-sheet').forEach(sheet => {
-        sheet.addEventListener('click', e => e.stopPropagation());
-    });
-    
-    // Pull to refresh
-    let touchStart = 0;
-    document.addEventListener('touchstart', e => {
-        touchStart = e.touches[0].clientY;
-    });
-    
-    document.addEventListener('touchmove', e => {
-        const touchY = e.touches[0].clientY;
-        const scrollTop = document.documentElement.scrollTop;
-        
-        if (scrollTop === 0 && touchY > touchStart + 50) {
-            // Could implement pull to refresh here
-        }
-    });
-}
-
-// Navigation
-function navigateTo(page) {
-    // Update state
-    appState.currentPage = page;
-    
-    // Update UI
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById(page).classList.add('active');
-    
-    // Update nav
-    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-    event.target.closest('.nav-item').classList.add('active');
-    
-    // Update header
-    const titles = {
-        dashboard: 'Dashboard',
-        workouts: 'Workouts',
-        progress: 'Progress',
-        timer: 'Timer'
-    };
-    document.getElementById('pageTitle').textContent = titles[page];
-    
-    // Haptic feedback if available
-    if ('vibrate' in navigator) {
-        navigator.vibrate(10);
+function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
     }
 }
 
-// Dashboard Functions
+// ------------- Event Listeners -------------
+
+function setupEventListeners() {
+    document.getElementById('addWorkoutForm').addEventListener('submit', handleAddWorkout);
+    document.getElementById('weightForm').addEventListener('submit', handleWeightLog);
+    document.getElementById('profileForm').addEventListener('submit', handleProfileSave);
+    document.getElementById('workoutSearch').addEventListener('input', handleSearch);
+
+    document.querySelectorAll('.modal-sheet').forEach(sheet => {
+        sheet.addEventListener('click', e => e.stopPropagation());
+    });
+
+    document.querySelectorAll('button, .workout-card, .nav-item').forEach(el => {
+        el.addEventListener('touchstart',  () => el.style.opacity = '0.7');
+        el.addEventListener('touchend',    () => el.style.opacity = '1');
+    });
+}
+
+// ------------- Navigation -------------
+
+function navigateTo(page) {
+    appState.currentPage = page;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById(page).classList.add('active');
+
+    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+    event.target.closest('.nav-item').classList.add('active');
+
+    const titles = {
+        dashboard: 'Dashboard',
+        workouts:  'Workouts',
+        progress:  'Progress',
+        timer:     'Timer'
+    };
+    document.getElementById('pageTitle').textContent = titles[page];
+
+    if ('vibrate' in navigator) navigator.vibrate(10);
+}
+
+// ---------------- Dashboard ----------------
+
+function addWelcomeMessage() {
+    const dash = document.getElementById('dashboard');
+    if (dash && !document.getElementById('welcomeMessage')) {
+        const div = document.createElement('div');
+        div.id = 'welcomeMessage';
+        div.className = 'welcome-text';
+        div.style.cssText = 'text-align:center;margin-bottom:20px;font-size:18px;color:#4F46E5;font-weight:600;';
+        div.textContent = `Welcome, ${currentProfile.name}!`;
+        dash.insertBefore(div, dash.firstChild);
+    }
+}
+
 function updateDashboard() {
-    // Update progress circle
     const progress = (appState.dailyStats.calories / appState.profile.calorieGoal) * 100;
     const offset = 565 - (565 * progress) / 100;
     document.getElementById('progressCircle').style.strokeDashoffset = offset;
-    
-    // Update values
-    document.getElementById('caloriesBig').textContent = appState.dailyStats.calories;
+
+    document.getElementById('caloriesBig').textContent  = appState.dailyStats.calories;
     document.getElementById('workoutsToday').textContent = appState.dailyStats.workouts;
-    document.getElementById('minutesToday').textContent = appState.dailyStats.minutes;
-    document.getElementById('waterToday').textContent = appState.dailyStats.water;
-    
-    // Update recent activity
+    document.getElementById('minutesToday').textContent  = appState.dailyStats.minutes;
+    document.getElementById('waterToday').textContent    = appState.dailyStats.water;
+
     renderRecentActivity();
 }
 
 function renderRecentActivity() {
     const container = document.getElementById('recentActivity');
     const recent = appState.workoutHistory.slice(0, 3);
-    
-    if (recent.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: var(--gray-400);">No recent activity</p>';
+    if (!recent.length) {
+        container.innerHTML = '<p style="text-align:center;color:var(--gray-400);">No recent activity</p>';
         return;
     }
-    
-    container.innerHTML = recent.map(workout => `
+    container.innerHTML = recent.map(w => `
         <div class="activity-item">
-            <div class="activity-icon">
-                <i class="bi bi-check-lg"></i>
-            </div>
+            <div class="activity-icon"><i class="bi bi-check-lg"></i></div>
             <div class="activity-details">
-                <div class="activity-name">${workout.name}</div>
-                <div class="activity-time">${formatDate(workout.date)} • ${workout.duration} min</div>
+                <div class="activity-name">${w.name}</div>
+                <div class="activity-time">${formatDate(w.date)} • ${w.duration} min</div>
             </div>
         </div>
     `).join('');
 }
 
-// Workout Functions
+// --------------- Workouts ----------------
+
 function renderWorkouts(filter = 'all') {
     const container = document.getElementById('workoutsList');
-    let workouts = [...appState.workouts];
-    
-    if (filter !== 'all') {
-        workouts = workouts.filter(w => w.type === filter);
-    }
-    
-    container.innerHTML = workouts.map(workout => `
-        <div class="workout-card" onclick="selectWorkout(${workout.id})">
+    let list = appState.workouts.slice();
+    if (filter !== 'all') list = list.filter(w => w.type === filter);
+    container.innerHTML = list.map(w => `
+        <div class="workout-card" onclick="selectWorkout(${w.id})">
             <div class="workout-header">
-                <div class="workout-title">${workout.name}</div>
-                <span class="workout-badge badge-${workout.difficulty}">${workout.difficulty}</span>
+                <div class="workout-title">${w.name}</div>
+                <span class="workout-badge badge-${w.difficulty}">${w.difficulty}</span>
             </div>
             <div class="workout-details">
-                <div class="workout-detail">
-                    <i class="bi bi-clock"></i>
-                    <span>${workout.duration} min</span>
-                </div>
-                <div class="workout-detail">
-                    <i class="bi bi-fire"></i>
-                    <span>${workout.calories} cal</span>
-                </div>
-                <div class="workout-detail">
-                    <i class="bi bi-tag"></i>
-                    <span>${workout.type}</span>
-                </div>
+                <div class="workout-detail"><i class="bi bi-clock"></i><span>${w.duration} min</span></div>
+                <div class="workout-detail"><i class="bi bi-fire"></i><span>${w.calories} cal</span></div>
+                <div class="workout-detail"><i class="bi bi-tag"></i><span>${w.type}</span></div>
             </div>
         </div>
     `).join('');
 }
 
 function filterByType(type) {
-    // Update pills
-    document.querySelectorAll('.category-pill').forEach(pill => {
-        pill.classList.remove('active');
-    });
+    document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
     event.target.classList.add('active');
-    
-    // Render filtered workouts
     renderWorkouts(type);
 }
 
 function handleSearch(e) {
-    const query = e.target.value.toLowerCase();
-    const cards = document.querySelectorAll('.workout-card');
-    
-    cards.forEach(card => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll('.workout-card').forEach(card => {
         const title = card.querySelector('.workout-title').textContent.toLowerCase();
-        card.style.display = title.includes(query) ? 'block' : 'none';
+        card.style.display = title.includes(q) ? 'block' : 'none';
     });
 }
 
-function selectWorkout(workoutId) {
-    const workout = appState.workouts.find(w => w.id === workoutId);
-    if (!workout) return;
-    
-    appState.currentWorkout = workout;
-    document.getElementById('timerWorkoutName').textContent = workout.name;
-    
-    // Navigate to timer
+function selectWorkout(id) {
+    const w = appState.workouts.find(x => x.id === id);
+    if (!w) return;
+    appState.currentWorkout = w;
+    document.getElementById('timerWorkoutName').textContent = w.name;
     document.querySelector('.timer-nav').click();
-    
-    showToast(`Selected: ${workout.name}`);
+    showToast(`Selected: ${w.name}`);
 }
 
-// Quick Actions
+// ------------- Quick Actions -------------
+
 function quickWorkout() {
-    const randomWorkout = appState.workouts[Math.floor(Math.random() * appState.workouts.length)];
-    selectWorkout(randomWorkout.id);
+    const rand = appState.workouts[Math.floor(Math.random() * appState.workouts.length)];
+    selectWorkout(rand.id);
 }
 
 function logWater() {
     appState.dailyStats.water++;
-    saveState();
+    persistState();
     updateDashboard();
     showToast(`Water logged: ${appState.dailyStats.water}/${appState.profile.waterGoal} cups`);
-    
-    // Haptic feedback
-    if ('vibrate' in navigator) {
-        navigator.vibrate([50, 30, 50]);
-    }
+    if ('vibrate' in navigator) navigator.vibrate([50,30,50]);
 }
 
-// Timer Functions
+// -------------- Timer ------------------
+
 function startTimer() {
     if (!appState.currentWorkout) {
         showToast('Please select a workout first');
         return;
     }
-    
     appState.isTimerRunning = true;
     document.getElementById('timerStartBtn').style.display = 'none';
     document.getElementById('timerPauseBtn').style.display = 'flex';
-    
     appState.timerInterval = setInterval(() => {
         appState.timerSeconds++;
         updateTimerDisplay();
-        
-        // Update calories
-        const caloriesPerSecond = appState.currentWorkout.calories / (appState.currentWorkout.duration * 60);
-        const currentCalories = Math.round(appState.timerSeconds * caloriesPerSecond);
-        document.getElementById('timerCalories').textContent = currentCalories;
-        
-        // Simulate heart rate
-        const heartRate = 80 + Math.floor(Math.random() * 40);
-        document.getElementById('timerHeartRate').textContent = heartRate;
+        const calPerSec = appState.currentWorkout.calories / (appState.currentWorkout.duration*60);
+        document.getElementById('timerCalories').textContent = Math.round(appState.timerSeconds * calPerSec);
+        document.getElementById('timerHeartRate').textContent = 80 + Math.floor(Math.random()*40);
     }, 1000);
 }
 
 function pauseTimer() {
     appState.isTimerRunning = false;
     clearInterval(appState.timerInterval);
-    document.getElementById('timerStartBtn').style.display = 'flex';
+    document.getElementById('timerStartBtn').style.display  = 'flex';
     document.getElementById('timerPauseBtn').style.display = 'none';
 }
 
 function resetTimer() {
     pauseTimer();
-    
     if (appState.timerSeconds > 60 && appState.currentWorkout) {
-        // Log the workout
-        const duration = Math.round(appState.timerSeconds / 60);
-        const calories = Math.round((appState.timerSeconds / 60) * (appState.currentWorkout.calories / appState.currentWorkout.duration));
-        
-        appState.dailyStats.calories += calories;
+        const mins = Math.round(appState.timerSeconds/60);
+        const cals = Math.round(mins * (appState.currentWorkout.calories/appState.currentWorkout.duration));
+        appState.dailyStats.calories += cals;
         appState.dailyStats.workouts++;
-        appState.dailyStats.minutes += duration;
-        
+        appState.dailyStats.minutes += mins;
         appState.workoutHistory.unshift({
             ...appState.currentWorkout,
             date: new Date().toISOString(),
-            duration: duration,
-            calories: calories
+            duration: mins,
+            calories: cals
         });
-        
-        saveState();
+        persistState();
         updateDashboard();
         updateProgress();
-        
-        showToast(`Workout completed! ${calories} calories burned`);
+        showToast(`Workout completed! ${cals} calories burned`);
     }
-    
     appState.timerSeconds = 0;
     updateTimerDisplay();
-    document.getElementById('timerCalories').textContent = '0';
+    document.getElementById('timerCalories').textContent   = '0';
     document.getElementById('timerHeartRate').textContent = '--';
 }
 
 function updateTimerDisplay() {
-    const minutes = Math.floor(appState.timerSeconds / 60);
-    const seconds = appState.timerSeconds % 60;
-    document.getElementById('timerDisplay').textContent = 
-        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    const m = Math.floor(appState.timerSeconds/60).toString().padStart(2,'0');
+    const s = (appState.timerSeconds%60).toString().padStart(2,'0');
+    document.getElementById('timerDisplay').textContent = `${m}:${s}`;
 }
 
-// Progress Functions
+// ------------ Progress -------------
+
 function updateProgress() {
-    const totalWorkouts = appState.workoutHistory.length;
-    const totalCalories = appState.workoutHistory.reduce((sum, w) => sum + w.calories, 0);
-    const avgMinutes = totalWorkouts > 0 
-        ? Math.round(appState.workoutHistory.reduce((sum, w) => sum + w.duration, 0) / totalWorkouts)
+    const total = appState.workoutHistory.length;
+    const calories = appState.workoutHistory.reduce((sum,w)=>sum+w.calories,0);
+    const avgMin = total > 0
+        ? Math.round(appState.workoutHistory.reduce((s,w)=>s+w.duration,0)/total)
         : 0;
     const streak = calculateStreak();
-    
-    document.getElementById('totalWorkoutsCount').textContent = totalWorkouts;
-    document.getElementById('totalCaloriesCount').textContent = totalCalories;
-    document.getElementById('currentStreak').textContent = streak;
-    document.getElementById('avgWorkoutTime').textContent = avgMinutes;
+    document.getElementById('totalWorkoutsCount').textContent = total;
+    document.getElementById('totalCaloriesCount').textContent = calories;
+    document.getElementById('avgWorkoutTime').textContent   = avgMin;
+    document.getElementById('currentStreak').textContent     = streak;
 }
 
 function calculateStreak() {
-    if (appState.workoutHistory.length === 0) return 0;
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    let streak = 0;
-    let checkDate = new Date(today);
-    
+    if (!appState.workoutHistory.length) return 0;
+    let count = 0;
+    let checkDate = new Date();
+    checkDate.setHours(0,0,0,0);
     while (true) {
         const dateStr = checkDate.toISOString().split('T')[0];
-        const hasWorkout = appState.workoutHistory.some(w => {
-            const workoutDate = new Date(w.date).toISOString().split('T')[0];
-            return workoutDate === dateStr;
-        });
-        
-        if (hasWorkout) {
-            streak++;
-            checkDate.setDate(checkDate.getDate() - 1);
-        } else {
-            break;
-        }
+        const found = appState.workoutHistory.some(w =>
+            new Date(w.date).toISOString().split('T')[0] === dateStr
+        );
+        if (!found) break;
+        count++;
+        checkDate.setDate(checkDate.getDate()-1);
     }
-    
-    return streak;
+    return count;
 }
+
+// ------------ Weight Chart ------------
 
 let weightChart;
 function initWeightChart() {
     const ctx = document.getElementById('weightChart').getContext('2d');
     weightChart = new Chart(ctx, {
         type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Weight',
-                data: [],
-                borderColor: '#4F46E5',
-                backgroundColor: 'rgba(79, 70, 229, 0.1)',
-                tension: 0.4,
-                fill: true
-            }]
-        },
+        data: { labels: [], datasets: [{ label:'Weight', data:[], tension:0.4, fill:true }] },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: false,
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.05)'
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
-                    }
-                }
-            }
+            plugins:{ legend:{ display:false } },
+            scales:{ y:{ beginAtZero:false }, x:{ grid:{ display:false }} }
         }
     });
-    
     updateWeightChart();
 }
 
 function updateWeightChart() {
-    if (!weightChart || appState.weightHistory.length === 0) return;
-    
-    const sorted = [...appState.weightHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
-    const labels = sorted.map(entry => formatDate(entry.date));
-    const data = sorted.map(entry => entry.weight);
-    
-    weightChart.data.labels = labels.slice(-7); // Show last 7 entries
-    weightChart.data.datasets[0].data = data.slice(-7);
+    if (!weightChart || !appState.weightHistory.length) return;
+    const sorted = appState.weightHistory.slice()
+        .sort((a,b)=>new Date(a.date)-new Date(b.date));
+    const labels = sorted.map(e=>formatDate(e.date)).slice(-7);
+    const data   = sorted.map(e=>e.weight).slice(-7);
+    weightChart.data.labels = labels;
+    weightChart.data.datasets[0].data = data;
     weightChart.update();
 }
 
-// Modal Functions
-function showAddWorkout() {
-    document.getElementById('addWorkoutModal').classList.add('show');
-}
+// -------------- Modals -------------
 
-function closeAddWorkout() {
-    document.getElementById('addWorkoutModal').classList.remove('show');
-}
-
-function showWeightModal() {
-    document.getElementById('weightModal').classList.add('show');
-}
-
-function closeWeightModal() {
-    document.getElementById('weightModal').classList.remove('show');
-}
-
-function showSettings() {
-    document.getElementById('userName').value = appState.profile.name;
+function showAddWorkout()    { document.getElementById('addWorkoutModal').classList.add('show'); }
+function closeAddWorkout()   { document.getElementById('addWorkoutModal').classList.remove('show'); }
+function showWeightModal()   { document.getElementById('weightModal').classList.add('show'); }
+function closeWeightModal()  { document.getElementById('weightModal').classList.remove('show'); }
+function showSettings()      {
+    document.getElementById('userName').value    = appState.profile.name;
     document.getElementById('calorieGoal').value = appState.profile.calorieGoal;
-    document.getElementById('waterGoal').value = appState.profile.waterGoal;
+    document.getElementById('waterGoal').value   = appState.profile.waterGoal;
     document.getElementById('settingsModal').classList.add('show');
 }
-
-function closeSettings() {
-    document.getElementById('settingsModal').classList.remove('show');
-}
-
-function closeModal(event) {
-    if (event.target.classList.contains('modal-overlay')) {
-        event.target.classList.remove('show');
+function closeSettings()     { document.getElementById('settingsModal').classList.remove('show'); }
+function closeModal(e)       {
+    if (e.target.classList.contains('modal-overlay')) {
+        e.target.classList.remove('show');
     }
 }
 
-// Form Handlers
+// ------------- Form Handlers -------------
+
 function handleAddWorkout(e) {
     e.preventDefault();
-    
     const workout = {
         id: Date.now(),
-        name: document.getElementById('workoutName').value,
-        type: document.getElementById('workoutType').value,
-        duration: parseInt(document.getElementById('workoutDuration').value),
+        name:       document.getElementById('workoutName').value,
+        type:       document.getElementById('workoutType').value,
+        duration:   +document.getElementById('workoutDuration').value,
         difficulty: document.getElementById('workoutDifficulty').value,
-        calories: Math.round(document.getElementById('workoutDuration').value * 7)
+        calories:   Math.round(document.getElementById('workoutDuration').value * 7)
     };
-    
     appState.workouts.push(workout);
-    saveState();
+    persistState();
     renderWorkouts();
     closeAddWorkout();
     showToast('Workout created successfully!');
-    
     e.target.reset();
 }
 
 function handleWeightLog(e) {
     e.preventDefault();
-    
     const entry = {
         weight: parseFloat(document.getElementById('weightInput').value),
-        date: document.getElementById('dateInput').value
+        date:   document.getElementById('dateInput').value
     };
-    
     appState.weightHistory.push(entry);
-    saveState();
+    persistState();
     updateWeightChart();
     closeWeightModal();
     showToast('Weight logged successfully!');
-    
     e.target.reset();
-    document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
+    document.getElementById('dateInput').value =
+        new Date().toISOString().split('T')[0];
 }
 
 function handleProfileSave(e) {
     e.preventDefault();
-    
     appState.profile = {
-        name: document.getElementById('userName').value,
-        calorieGoal: parseInt(document.getElementById('calorieGoal').value),
-        waterGoal: parseInt(document.getElementById('waterGoal').value)
+        name:        document.getElementById('userName').value,
+        calorieGoal: +document.getElementById('calorieGoal').value,
+        waterGoal:   +document.getElementById('waterGoal').value
     };
-    
-    saveState();
+    persistState();
     updateDashboard();
     closeSettings();
     showToast('Settings saved!');
 }
 
-// Utility Functions
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (date.toDateString() === today.toDateString()) {
-        return 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-    } else {
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
+// ------------- Persistence -------------
+
+function persistState() {
+    if (!currentProfile) return;
+    currentProfile.data = {
+        calorieGoal:   appState.profile.calorieGoal,
+        waterGoal:     appState.profile.waterGoal,
+        dailyStats:    appState.dailyStats,
+        workouts:      appState.workouts,
+        workoutHistory:appState.workoutHistory,
+        weightHistory: appState.weightHistory
+    };
+    saveCurrentProfile(currentProfile);
 }
 
-function showToast(message) {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.classList.add('show');
-    
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, 3000);
+// ----------- Utilities ------------
+
+function formatDate(dStr) {
+    const d = new Date(dStr);
+    const today = new Date();
+    const yest = new Date(today);
+    yest.setDate(yest.getDate()-1);
+    if (d.toDateString() === today.toDateString())      return 'Today';
+    if (d.toDateString() === yest.toDateString())       return 'Yesterday';
+    return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 function enableTouchFeedback() {
-    document.querySelectorAll('button, .workout-card, .nav-item').forEach(element => {
-        element.addEventListener('touchstart', function() {
-            this.style.opacity = '0.7';
-        });
-        element.addEventListener('touchend', function() {
-            this.style.opacity = '1';
-        });
-    });
-}
-
-// Service Worker Registration
-function registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(() => {
-            // Service worker registration failed, app still works without it
-        });
-    }
+    // handled in setupEventListeners
 }
