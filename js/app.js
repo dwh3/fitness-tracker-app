@@ -27,25 +27,31 @@ function logoutProfile() {
 
 /* ---------- Data model ---------- */
 const exerciseLibrary = [
-  { id: 101, name: 'Barbell Bench Press', muscleGroup: 'chest' },
-  { id: 102, name: 'Incline DB Press', muscleGroup: 'chest' },
-  { id: 201, name: 'Bent‑Over Row', muscleGroup: 'back' },
-  { id: 202, name: 'Lat Pulldown', muscleGroup: 'back' },
-  { id: 301, name: 'Back Squat', muscleGroup: 'quads' },
-  { id: 302, name: 'Leg Press', muscleGroup: 'quads' },
-  { id: 401, name: 'Romanian Deadlift', muscleGroup: 'hams_glutes' },
-  { id: 402, name: 'Hip Thrust', muscleGroup: 'hams_glutes' },
-  { id: 501, name: 'DB Shoulder Press', muscleGroup: 'shoulders' },
-  { id: 502, name: 'Lateral Raise', muscleGroup: 'shoulders' },
-  { id: 601, name: 'Barbell Curl', muscleGroup: 'biceps' },
-  { id: 701, name: 'Triceps Pushdown', muscleGroup: 'triceps' },
-  { id: 801, name: 'Standing Calf Raise', muscleGroup: 'calves' },
-  { id: 901, name: 'Hanging Leg Raise', muscleGroup: 'abs' }
+  { id: 101, name: 'Barbell Bench Press', muscleGroup: 'chest',     type: 'compound' },
+  { id: 102, name: 'Incline DB Press',     muscleGroup: 'chest',     type: 'compound' },
+  { id: 201, name: 'Bent‑Over Row',        muscleGroup: 'back',      type: 'compound' },
+  { id: 202, name: 'Lat Pulldown',         muscleGroup: 'back',      type: 'compound' },
+  { id: 301, name: 'Back Squat',           muscleGroup: 'quads',     type: 'compound' },
+  { id: 302, name: 'Leg Press',            muscleGroup: 'quads',     type: 'compound' },
+  { id: 401, name: 'Romanian Deadlift',    muscleGroup: 'hams_glutes', type: 'compound' },
+  { id: 402, name: 'Hip Thrust',           muscleGroup: 'hams_glutes', type: 'compound' },
+  { id: 501, name: 'DB Shoulder Press',    muscleGroup: 'shoulders', type: 'compound' },
+  { id: 502, name: 'Lateral Raise',        muscleGroup: 'shoulders', type: 'accessory' },
+  { id: 601, name: 'Barbell Curl',         muscleGroup: 'biceps',    type: 'accessory' },
+  { id: 701, name: 'Triceps Pushdown',     muscleGroup: 'triceps',   type: 'accessory' },
+  { id: 801, name: 'Standing Calf Raise',  muscleGroup: 'calves',    type: 'accessory' },
+  { id: 901, name: 'Hanging Leg Raise',    muscleGroup: 'abs',       type: 'accessory' }
 ];
 
 function todayISO() { return new Date().toISOString().split('T')[0]; }
 function prettyGroup(k) { return k.replace(/_/g, ' ').replace(/\b\w/g, s => s.toUpperCase()); }
 function clamp(val, min, max) { return Math.min(max, Math.max(min, val)); }
+function mmss(totalMs) {
+  const totalSec = Math.max(0, Math.round(totalMs / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
 
 let currentProfile = null;
 let weightChart = null;
@@ -57,16 +63,24 @@ let templateDraft = null;
 let appState = {
   profile: { name: '', calorieGoal: 2200, proteinGoal: 160 },
 
+  // Settings
+  settings: {
+    restDefaults: { compoundSec: 150, accessorySec: 90, autoAdjust: true }
+  },
+
   // Diet
   weightHistory: [],             // [{date:'YYYY-MM-DD', weight}]
   dietLog: {},                   // { 'YYYY-MM-DD': { entries:[{calories, protein, carbs, fat}], totals:{calories,protein,carbs,fat} } }
 
   // Exercise
   setsLog: [],                   // [{date ISO, exerciseId, exerciseName, muscleGroup, weight, reps, rir}]
-  currentSession: { date: new Date().toISOString(), items: [] }, // items:[{exerciseId,name,muscleGroup,sets:[{weight,reps,rir,ts}]}]
+  currentSession: { date: new Date().toISOString(), items: [] }, // for manual "Today's Session"
 
   // Templates
-  templates: []                  // [{id,name,notes,items:[{exerciseId,name,muscleGroup,sets}]}]
+  templates: [],                 // [{id,name,notes,items:[{exerciseId,name,muscleGroup,sets,type,restMode,restSec}]}]
+
+  // Active workout (live) – persisted
+  activeWorkout: null            // see startLiveFromTemplate for shape
 };
 
 /* ---------- Init ---------- */
@@ -83,12 +97,21 @@ document.addEventListener('DOMContentLoaded', () => {
       calorieGoal: currentProfile.data?.calorieGoal ?? 2200,
       proteinGoal: currentProfile.data?.proteinGoal ?? 160
     },
+    settings: currentProfile.data?.settings ?? { restDefaults: { compoundSec: 150, accessorySec: 90, autoAdjust: true } },
     weightHistory: currentProfile.data?.weightHistory ?? [],
     dietLog: currentProfile.data?.dietLog ?? {},
     setsLog: currentProfile.data?.setsLog ?? [],
     templates: currentProfile.data?.templates ?? [],
-    currentSession: { date: new Date().toISOString(), items: [] }
+    currentSession: { date: new Date().toISOString(), items: [] },
+    activeWorkout: currentProfile.data?.activeWorkout ?? null
   };
+
+  // If an active workout exists on load, restore running timer
+  if (appState.activeWorkout?.rest?.state === 'running' && appState.activeWorkout.rest.endAt) {
+    const remaining = Math.max(0, appState.activeWorkout.rest.endAt - Date.now());
+    appState.activeWorkout.rest.remainingMs = remaining;
+    ensureRestIntervalRunning();
+  }
 
   // Pre-fill dates
   const di = document.getElementById('dateInput');
@@ -102,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderTemplatesList();
   updateExerciseProgress();
   updateDietPanels();
+  renderActiveWorkoutBanner();
 
   // Charts
   initWeightChart();
@@ -133,15 +157,11 @@ function setupEventListeners() {
 
   // Template form
   const tf = document.getElementById('templateForm');
-  if (tf) {
-    tf.addEventListener('submit', handleTemplateSave);
-  }
+  if (tf) tf.addEventListener('submit', handleTemplateSave);
 
-  // Template inputs to drive Save enabled/disabled
+  // Enable / disable template Save
   const nameInput = document.getElementById('templateName');
-  if (nameInput) {
-    nameInput.addEventListener('input', updateTemplateSaveButtonState);
-  }
+  if (nameInput) nameInput.addEventListener('input', updateTemplateSaveButtonState);
 
   // Template exercise search
   const templateSearch = document.getElementById('templateExerciseSearch');
@@ -159,17 +179,22 @@ function setupEventListeners() {
     });
   }
 
-  // Block clicks inside bottom sheets
-  document.querySelectorAll('.modal-sheet').forEach(sheet => {
-    sheet.addEventListener('click', e => e.stopPropagation());
-  });
-
-  // Escape closes Template modal (if open)
+  // Escape closes Template or Active Workout modal (if open)
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       const tm = document.getElementById('templateModal');
       if (tm && tm.classList.contains('show')) closeTemplateModal();
+      const awm = document.getElementById('activeWorkoutModal');
+      if (awm && awm.classList.contains('show')) closeActiveWorkoutModal();
     }
+    if (e.key === 'Enter' && document.getElementById('activeWorkoutModal')?.classList.contains('show')) {
+      logActiveSet();
+    }
+  });
+
+  // Prevent overlay clicks from closing sheets unintentionally
+  document.querySelectorAll('.modal-sheet').forEach(sheet => {
+    sheet.addEventListener('click', e => e.stopPropagation());
   });
 
   // Touch feedback
@@ -194,14 +219,11 @@ function navigateTo(page) {
   const btns = document.querySelectorAll('.bottom-nav .nav-item');
   if (btns[idx]) btns[idx].classList.add('active');
 }
-
 function switchSubtab(section, tab, btn) {
-  // Buttons
   const container = document.getElementById(section + 'Subtabs');
   if (container) container.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
 
-  // Panels
   document.querySelectorAll(`.subtab-panel[data-section="${section}"]`).forEach(p => p.classList.add('hidden'));
   const panel = document.querySelector(`.subtab-panel[data-section="${section}"][data-subtab="${tab}"]`);
   if (panel) panel.classList.remove('hidden');
@@ -267,24 +289,19 @@ function updateHome() {
   }
 }
 
-/* ---------- Exercise: session logging ---------- */
+/* ---------- Exercise: session logging (manual) ---------- */
 function showExerciseModal() {
   const search = document.getElementById('exerciseSearch');
-  if (search) {
-    search.value = '';
-  }
+  if (search) search.value = '';
   renderExerciseList('');
   document.getElementById('exerciseModal')?.classList.add('show');
 }
-
 function renderExerciseList(q = '') {
   const list = document.getElementById('exerciseList');
   if (!list) return;
-  
   const filtered = exerciseLibrary.filter(e =>
     e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q)
   );
-  
   list.innerHTML = filtered.map(ex => `
     <div class="workout-card" onclick="addExerciseToSession(${ex.id})">
       <div class="workout-header">
@@ -293,7 +310,6 @@ function renderExerciseList(q = '') {
       </div>
     </div>`).join('');
 }
-
 function closeExerciseModal() { document.getElementById('exerciseModal')?.classList.remove('show'); }
 
 function addExerciseToSession(id) {
@@ -307,7 +323,6 @@ function addExerciseToSession(id) {
   renderSession();
   closeExerciseModal();
 }
-
 function addSet(exerciseId) {
   const weight = parseFloat(prompt('Weight (lbs):', '100')) || 0;
   const reps = parseInt(prompt('Reps:', '10'), 10) || 0;
@@ -330,7 +345,6 @@ function addSet(exerciseId) {
   updateExerciseProgress();
   updateSetsChart();
 }
-
 function renderSession() {
   const list = document.getElementById('sessionList');
   if (!list) return;
@@ -363,7 +377,7 @@ function renderSession() {
   }).join('');
 }
 
-/* ---------- Exercise: templates ---------- */
+/* ---------- Exercise: templates list ---------- */
 function renderTemplatesList() {
   const container = document.getElementById('templatesList');
   if (!container) return;
@@ -380,6 +394,7 @@ function renderTemplatesList() {
         <div class="workout-header">
           <div class="workout-title">${tpl.name} ${tpl.notes ? `<small style="color:var(--gray-500);">• ${tpl.notes}</small>` : ''}</div>
           <div>
+            <button class="icon-btn" type="button" title="Start Live" onclick="startLiveFromTemplate('${tpl.id}')"><i class="bi bi-stopwatch"></i></button>
             <button class="icon-btn" type="button" title="Use template" onclick="useTemplate('${tpl.id}')"><i class="bi bi-play-circle"></i></button>
             <button class="icon-btn" type="button" title="Edit" onclick="editTemplate('${tpl.id}')"><i class="bi bi-pencil"></i></button>
             <button class="icon-btn" type="button" title="Duplicate" onclick="duplicateTemplate('${tpl.id}')"><i class="bi bi-files"></i></button>
@@ -391,13 +406,13 @@ function renderTemplatesList() {
   }).join('');
 }
 
+/* ---------- Template builder (create/edit) ---------- */
 function showTemplateModal(id) {
   const title = document.getElementById('templateModalTitle');
   const nameInput = document.getElementById('templateName');
   const notesInput = document.getElementById('templateNotes');
   const search = document.getElementById('templateExerciseSearch');
 
-  // Prepare draft
   if (id) {
     const tpl = appState.templates.find(t => t.id === id);
     if (!tpl) return;
@@ -411,30 +426,21 @@ function showTemplateModal(id) {
   if (nameInput) nameInput.value = templateDraft.name || '';
   if (notesInput) notesInput.value = templateDraft.notes || '';
 
-  // Clear search and render results
-  if (search) {
-    search.value = '';
-  }
+  if (search) search.value = '';
   renderTemplateExerciseResults('');
-
-  // Render selected items
   renderTemplateDraftItems();
 
   document.getElementById('templateModal')?.classList.add('show');
   if (nameInput) nameInput.focus();
 
-  // Ensure correct Save state
   updateTemplateSaveButtonState();
 }
-
 function renderTemplateExerciseResults(q = '') {
   const results = document.getElementById('templateExerciseResults');
   if (!results) return;
-  
   const filtered = exerciseLibrary.filter(e =>
     e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q)
   ).slice(0, 10);
-  
   results.innerHTML = filtered.map(ex => `
     <div class="workout-card">
       <div class="workout-header">
@@ -444,12 +450,10 @@ function renderTemplateExerciseResults(q = '') {
       <div class="activity-time" style="text-transform:capitalize;">${prettyGroup(ex.muscleGroup)}</div>
     </div>`).join('');
 }
-
-function closeTemplateModal() { 
-  document.getElementById('templateModal')?.classList.remove('show'); 
-  templateDraft = null; 
+function closeTemplateModal() {
+  document.getElementById('templateModal')?.classList.remove('show');
+  templateDraft = null;
 }
-
 function renderTemplateDraftItems() {
   const itemsContainer = document.getElementById('templateItems');
   if (!itemsContainer) return;
@@ -471,23 +475,45 @@ function renderTemplateDraftItems() {
       </div>
       <div class="activity-time">
         Sets:
-        <input type="number" class="form-input sets-input" min="1" max="10" value="${it.sets}" oninput="changeTemplateItemSets(${idx}, this.value)" />
+        <input type="number" class="form-input sets-input" min="1" max="10" value="${it.sets || 3}" oninput="changeTemplateItemSets(${idx}, this.value)" />
+      </div>
+      <div class="activity-time" style="margin-top:8px;">
+        Type:
+        <select class="form-input sets-input" onchange="changeTemplateItemType(${idx}, this.value)">
+          <option value="compound" ${it.type === 'compound' ? 'selected' : ''}>Compound</option>
+          <option value="accessory" ${it.type === 'accessory' ? 'selected' : ''}>Accessory</option>
+        </select>
+        • Rest:
+        <select class="form-input sets-input" onchange="changeTemplateItemRestMode(${idx}, this.value)">
+          <option value="auto" ${it.restMode !== 'custom' ? 'selected' : ''}>Auto</option>
+          <option value="custom" ${it.restMode === 'custom' ? 'selected' : ''}>Custom</option>
+        </select>
+        ${it.restMode === 'custom'
+          ? `<input type="number" class="form-input sets-input" min="30" max="600" step="5" value="${it.restSec || 90}" oninput="changeTemplateItemRestSec(${idx}, this.value)" /> sec`
+          : `<span style="color:var(--gray-500);">uses defaults</span>`
+        }
       </div>
     </div>
   `).join('');
 }
-
 function addExerciseToDraft(id) {
   if (!templateDraft) return;
   const ex = exerciseLibrary.find(e => e.id === id);
   if (!ex) return;
   if (!templateDraft.items.some(i => i.exerciseId === id)) {
-    templateDraft.items.push({ exerciseId: id, name: ex.name, muscleGroup: ex.muscleGroup, sets: 3 });
+    templateDraft.items.push({
+      exerciseId: id,
+      name: ex.name,
+      muscleGroup: ex.muscleGroup,
+      sets: 3,
+      type: ex.type || 'accessory',
+      restMode: 'auto', // 'auto' or 'custom'
+      restSec: null
+    });
   }
   renderTemplateDraftItems();
   updateTemplateSaveButtonState();
 }
-
 function moveTemplateItem(index, dir) {
   if (!templateDraft) return;
   const newIndex = index + dir;
@@ -497,60 +523,59 @@ function moveTemplateItem(index, dir) {
   renderTemplateDraftItems();
   updateTemplateSaveButtonState();
 }
-
 function removeTemplateItem(index) {
   if (!templateDraft) return;
   templateDraft.items.splice(index, 1);
   renderTemplateDraftItems();
   updateTemplateSaveButtonState();
 }
-
 function changeTemplateItemSets(index, value) {
   if (!templateDraft) return;
   const v = Math.max(1, Math.min(10, parseInt(value || '3', 10)));
   templateDraft.items[index].sets = v;
   updateTemplateSaveButtonState();
 }
-
+function changeTemplateItemType(index, value) {
+  if (!templateDraft) return;
+  templateDraft.items[index].type = value === 'compound' ? 'compound' : 'accessory';
+}
+function changeTemplateItemRestMode(index, value) {
+  if (!templateDraft) return;
+  templateDraft.items[index].restMode = (value === 'custom' ? 'custom' : 'auto');
+  renderTemplateDraftItems();
+}
+function changeTemplateItemRestSec(index, value) {
+  if (!templateDraft) return;
+  const v = Math.max(30, Math.min(600, parseInt(value || '90', 10)));
+  templateDraft.items[index].restSec = v;
+}
 function updateTemplateSaveButtonState() {
   const btn = document.getElementById('saveTemplateBtn') || document.querySelector('#templateModal .btn-primary-full');
   const name = (document.getElementById('templateName')?.value || '').trim();
   const ok = !!(name && templateDraft && Array.isArray(templateDraft.items) && templateDraft.items.length > 0);
   if (btn) btn.disabled = !ok;
 }
-
 function handleTemplateSave(e) {
   e.preventDefault();
   if (!templateDraft) {
     showToast('Something went wrong. Please reopen the Template Builder.');
     return;
   }
-
   const nameInput = document.getElementById('templateName');
   const notesInput = document.getElementById('templateNotes');
   const name = (nameInput?.value || '').trim();
   const notes = (notesInput?.value || '').trim();
 
-  if (!name) { 
-    showToast('Please name your template'); 
-    return; 
-  }
-  if (!templateDraft.items.length) { 
-    showToast('Please add at least one exercise'); 
-    return; 
-  }
+  if (!name) { showToast('Please name your template'); return; }
+  if (!templateDraft.items.length) { showToast('Please add at least one exercise'); return; }
 
   templateDraft.name = name;
   templateDraft.notes = notes;
 
   if (templateDraft.id) {
-    // Update existing template
     const idx = appState.templates.findIndex(t => t.id === templateDraft.id);
-    if (idx > -1) {
-      appState.templates[idx] = JSON.parse(JSON.stringify(templateDraft));
-    }
+    if (idx > -1) appState.templates[idx] = JSON.parse(JSON.stringify(templateDraft));
   } else {
-    // Create new template
     templateDraft.id = Date.now().toString();
     appState.templates.push(JSON.parse(JSON.stringify(templateDraft)));
   }
@@ -560,12 +585,7 @@ function handleTemplateSave(e) {
   closeTemplateModal();
   showToast('Template saved!');
 }
-
-/* Existing helpers */
-function editTemplate(id) { 
-  showTemplateModal(id); 
-}
-
+function editTemplate(id) { showTemplateModal(id); }
 function duplicateTemplate(id) {
   const tpl = appState.templates.find(t => t.id === id);
   if (!tpl) return;
@@ -577,7 +597,6 @@ function duplicateTemplate(id) {
   renderTemplatesList();
   showToast('Template duplicated');
 }
-
 function deleteTemplate(id) {
   const ok = confirm('Delete this template?');
   if (!ok) return;
@@ -586,18 +605,16 @@ function deleteTemplate(id) {
   renderTemplatesList();
   showToast('Template deleted');
 }
-
 function useTemplate(id) {
   const tpl = appState.templates.find(t => t.id === id);
   if (!tpl) return;
-  // Replace today's session with this template's exercises (sets start empty)
   appState.currentSession = { date: new Date().toISOString(), items: [] };
   tpl.items.forEach(it => {
-    appState.currentSession.items.push({ 
-      exerciseId: it.exerciseId, 
-      name: it.name, 
-      muscleGroup: it.muscleGroup, 
-      sets: [] 
+    appState.currentSession.items.push({
+      exerciseId: it.exerciseId,
+      name: it.name,
+      muscleGroup: it.muscleGroup,
+      sets: []
     });
   });
   persistState();
@@ -605,6 +622,391 @@ function useTemplate(id) {
   showToast(`Loaded "${tpl.name}"`);
   navigateTo('exercise');
   switchSubtab('exercise', 'log', document.querySelector('#exerciseSubtabs .subtab-btn'));
+}
+
+/* ---------- Active Workout (Live) ---------- */
+let restIntervalId = null;
+
+function computeRecommendedRestSec(exWithMeta, lastSet = null) {
+  // base from template item settings or global defaults
+  let base = 0;
+  if (exWithMeta.restMode === 'custom' && exWithMeta.customRestSec) {
+    base = exWithMeta.customRestSec;
+  } else {
+    base = (exWithMeta.type === 'compound')
+      ? (appState.settings?.restDefaults?.compoundSec ?? 150)
+      : (appState.settings?.restDefaults?.accessorySec ?? 90);
+    // optional auto adjustment
+    if (appState.settings?.restDefaults?.autoAdjust && lastSet) {
+      const heavy = (Number.isFinite(lastSet.reps) && lastSet.reps <= 5) ||
+                    (Number.isFinite(lastSet.rir)  && lastSet.rir <= 1);
+      const veryLight = (Number.isFinite(lastSet.reps) && lastSet.reps >= 13) ||
+                        (Number.isFinite(lastSet.rir)  && lastSet.rir >= 4);
+      if (heavy) base += 60;
+      else if (veryLight) base -= 30;
+    }
+  }
+  return clamp(Math.round(base), 30, 600);
+}
+
+function startLiveFromTemplate(id) {
+  // If a workout is already active, confirm replacement
+  if (appState.activeWorkout && !appState.activeWorkout.endedAt) {
+    const ok = confirm('You already have an active workout. Discard it and start a new one?');
+    if (!ok) return;
+    clearActiveTimer();
+    appState.activeWorkout = null;
+  }
+
+  const tpl = appState.templates.find(t => t.id === id);
+  if (!tpl || !tpl.items.length) {
+    showToast('Template is empty.');
+    return;
+  }
+
+  // Prepare items with meta needed for rest logic
+  const items = tpl.items.map(it => ({
+    exerciseId: it.exerciseId,
+    name: it.name,
+    muscleGroup: it.muscleGroup,
+    targetSets: it.sets || 3,
+    type: it.type || (exerciseLibrary.find(e => e.id === it.exerciseId)?.type ?? 'accessory'),
+    restMode: it.restMode || 'auto',
+    customRestSec: it.restMode === 'custom' ? (it.restSec || 90) : null,
+    setsCompleted: [] // {weight,reps,rir,ts}
+  }));
+
+  // Initial rest recommendation for first exercise (before any set)
+  const firstRestSec = computeRecommendedRestSec(items[0], null);
+
+  appState.activeWorkout = {
+    id: 'AW-' + Date.now().toString(),
+    name: tpl.name || 'Workout',
+    templateId: tpl.id,
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    currentExerciseIndex: 0,
+    rest: { state: 'idle', durationSec: firstRestSec, remainingMs: firstRestSec * 1000, endAt: null },
+    items
+  };
+
+  persistState();
+  openActiveWorkoutModal();
+  renderActiveWorkoutBanner();
+}
+
+function openActiveWorkoutModal() {
+  renderActiveWorkout();
+  document.getElementById('activeWorkoutModal')?.classList.add('show');
+}
+function closeActiveWorkoutModal() {
+  document.getElementById('activeWorkoutModal')?.classList.remove('show');
+  renderActiveWorkoutBanner();
+}
+function resumeActiveWorkout() {
+  if (!appState.activeWorkout || appState.activeWorkout.endedAt) return;
+  openActiveWorkoutModal();
+}
+
+function renderActiveWorkout() {
+  const aw = appState.activeWorkout;
+  const content = document.getElementById('activeWorkoutContent');
+  const title = document.getElementById('activeWorkoutTitle');
+  if (!aw || !content) return;
+
+  if (title) title.textContent = `Active: ${aw.name}`;
+
+  const idx = aw.currentExerciseIndex;
+  const ex = aw.items[idx];
+  const done = ex.setsCompleted.length;
+  const target = ex.targetSets;
+
+  // set pills
+  const pills = Array.from({ length: target }).map((_, i) => {
+    const cls = i < done ? 'set-pill done' : (i === done ? 'set-pill current' : 'set-pill');
+    return `<span class="${cls}">${i + 1}</span>`;
+  }).join('');
+
+  // Prefill inputs from last set on this exercise if present
+  const last = ex.setsCompleted[ex.setsCompleted.length - 1] || {};
+  const weightPrefill = last.weight ?? '';
+  const repsPrefill = last.reps ?? '';
+  const rirPrefill = last.rir ?? '';
+
+  // Rest timer label
+  const remaining = aw.rest?.remainingMs ?? (aw.rest?.durationSec || 0) * 1000;
+  const restLabel = mmss(remaining);
+
+  content.innerHTML = `
+    <div class="activity-time">Exercise ${idx + 1} of ${aw.items.length}</div>
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title">${ex.name} <small style="color:var(--gray-500);text-transform:capitalize;">• ${prettyGroup(ex.muscleGroup)}</small></div>
+        <span class="workout-badge" style="background:var(--warning);color:white;">${done}/${target} sets</span>
+      </div>
+
+      <div class="set-pills">${pills}</div>
+
+      <div class="input-row" style="margin-top:10px;">
+        <div class="input-mini">
+          <label>Weight (lbs)</label>
+          <input type="number" class="form-input" id="awWeight" inputmode="decimal" placeholder="e.g., 100" value="${weightPrefill}" />
+        </div>
+        <div class="input-mini">
+          <label>Reps</label>
+          <input type="number" class="form-input" id="awReps" inputmode="numeric" placeholder="e.g., 10" value="${repsPrefill}" />
+        </div>
+        <div class="input-mini">
+          <label>RIR</label>
+          <input type="number" class="form-input" id="awRir" inputmode="numeric" placeholder="e.g., 2" value="${rirPrefill}" />
+        </div>
+      </div>
+
+      <button class="btn-primary-full" type="button" style="margin-top:10px;" onclick="logActiveSet()">
+        ${done + 1 <= target ? 'Log Set & Start Rest' : 'Log Set'}
+      </button>
+
+      <div class="rest-timer" id="restTimer">
+        <div class="activity-time">Rest Timer ${ex.restMode === 'custom' ? '(custom)' : '(auto)'}</div>
+        <div class="timer-display" id="restDisplay">${restLabel}</div>
+        <div class="timer-adjusts">
+          <button class="btn-text" type="button" onclick="adjustRestTimer(-15)"><i class="bi bi-dash-circle"></i> −15s</button>
+          <button class="btn-text" type="button" onclick="adjustRestTimer(15)"><i class="bi bi-plus-circle"></i> +15s</button>
+        </div>
+        <div class="timer-controls">
+          <button class="btn-text" type="button" onclick="startOrPauseRestTimer()">
+            <i class="bi ${aw.rest.state === 'running' ? 'bi-pause-circle' : 'bi-play-circle'}"></i>
+            ${aw.rest.state === 'running' ? 'Pause' : (aw.rest.state === 'paused' ? 'Resume' : 'Start')}
+          </button>
+          <button class="btn-text" type="button" onclick="resetRestTimer()"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+          <button class="btn-text" type="button" onclick="skipRestTimer()"><i class="bi bi-skip-forward"></i> Skip</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="activity-time" style="margin-top:8px; text-align:center;">
+      ${idx > 0 ? `<button class="btn-text" type="button" onclick="prevExercise()"><i class="bi bi-arrow-left-circle"></i> Prev Exercise</button>` : ''}
+      ${idx < aw.items.length - 1 ? `<button class="btn-text" type="button" style="margin-left:8px;" onclick="nextExercise()">Next Exercise <i class="bi bi-arrow-right-circle"></i></button>` : ''}
+    </div>
+  `;
+
+  // focus weight for quick entry
+  setTimeout(() => document.getElementById('awWeight')?.focus(), 50);
+
+  // Update banner meta
+  renderActiveWorkoutBanner();
+
+  // If timer is running, make sure interval is active and display is updating
+  ensureRestIntervalRunning();
+}
+
+function renderActiveWorkoutBanner() {
+  const b = document.getElementById('activeWorkoutBanner');
+  const meta = document.getElementById('activeWorkoutBannerMeta');
+  const aw = appState.activeWorkout;
+  if (!b || !meta) return;
+
+  if (aw && !aw.endedAt) {
+    const ex = aw.items[aw.currentExerciseIndex];
+    meta.textContent = `${aw.name} • ${ex.name} (${ex.setsCompleted.length}/${ex.targetSets})`;
+    b.classList.add('show');
+  } else {
+    b.classList.remove('show');
+    meta.textContent = '';
+  }
+}
+
+function logActiveSet() {
+  const aw = appState.activeWorkout;
+  if (!aw || aw.endedAt) return;
+
+  const ex = aw.items[aw.currentExerciseIndex];
+  const weight = parseFloat(document.getElementById('awWeight')?.value || '');
+  const reps = parseInt(document.getElementById('awReps')?.value || '', 10);
+  const rir = parseInt(document.getElementById('awRir')?.value || '', 10);
+
+  if (!(isFinite(weight) && weight >= 0) || !(Number.isInteger(reps) && reps > 0)) {
+    showToast('Enter weight and reps'); return;
+  }
+
+  ex.setsCompleted.push({ weight, reps, rir: isFinite(rir) ? rir : null, ts: new Date().toISOString() });
+
+  // After logging a set, auto-start rest with recommended duration
+  const restSec = computeRecommendedRestSec(ex, { weight, reps, rir });
+  aw.rest.state = 'running';
+  aw.rest.durationSec = restSec;
+  aw.rest.remainingMs = restSec * 1000;
+  aw.rest.endAt = Date.now() + aw.rest.remainingMs;
+
+  persistState();
+  renderActiveWorkout();
+  showToast('Set logged');
+}
+
+function nextExercise() {
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+  if (aw.currentExerciseIndex < aw.items.length - 1) {
+    aw.currentExerciseIndex++;
+    // Reset rest based on next exercise default
+    const nextEx = aw.items[aw.currentExerciseIndex];
+    const restSec = computeRecommendedRestSec(nextEx, null);
+    aw.rest.state = 'idle';
+    aw.rest.durationSec = restSec;
+    aw.rest.remainingMs = restSec * 1000;
+    aw.rest.endAt = null;
+    persistState();
+    renderActiveWorkout();
+  }
+}
+function prevExercise() {
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+  if (aw.currentExerciseIndex > 0) {
+    aw.currentExerciseIndex--;
+    const prevEx = aw.items[aw.currentExerciseIndex];
+    const restSec = computeRecommendedRestSec(prevEx, null);
+    aw.rest.state = 'idle';
+    aw.rest.durationSec = restSec;
+    aw.rest.remainingMs = restSec * 1000;
+    aw.rest.endAt = null;
+    persistState();
+    renderActiveWorkout();
+  }
+}
+
+function discardActiveWorkout() {
+  if (!appState.activeWorkout || appState.activeWorkout.endedAt) { closeActiveWorkoutModal(); return; }
+  const ok = confirm('Discard this active workout? This cannot be undone.');
+  if (!ok) return;
+  clearActiveTimer();
+  appState.activeWorkout = null;
+  persistState();
+  closeActiveWorkoutModal();
+  renderActiveWorkoutBanner();
+  showToast('Active workout discarded');
+}
+
+function finishActiveWorkout() {
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+  aw.endedAt = new Date().toISOString();
+
+  // Log all sets to setsLog
+  aw.items.forEach(it => {
+    it.setsCompleted.forEach(st => {
+      appState.setsLog.push({
+        date: st.ts || new Date().toISOString(),
+        exerciseId: it.exerciseId,
+        exerciseName: it.name,
+        muscleGroup: it.muscleGroup,
+        weight: st.weight,
+        reps: st.reps,
+        rir: st.rir
+      });
+    });
+  });
+
+  clearActiveTimer();
+  appState.activeWorkout = null;
+  persistState();
+
+  updateHome();
+  updateExerciseProgress();
+  updateSetsChart();
+
+  closeActiveWorkoutModal();
+  renderActiveWorkoutBanner();
+  showToast('Workout saved!');
+}
+
+/* ---- Rest timer helpers ---- */
+function ensureRestIntervalRunning() {
+  const aw = appState.activeWorkout;
+  if (!aw || aw.rest.state !== 'running') return;
+  if (restIntervalId) return;
+  restIntervalId = setInterval(() => {
+    tickRestTimer();
+  }, 1000);
+}
+function tickRestTimer() {
+  const aw = appState.activeWorkout;
+  if (!aw || aw.rest.state !== 'running' || !aw.rest.endAt) { clearActiveTimer(); return; }
+  const remaining = Math.max(0, aw.rest.endAt - Date.now());
+  aw.rest.remainingMs = remaining;
+
+  // Update display if visible
+  const display = document.getElementById('restDisplay');
+  if (display) display.textContent = mmss(remaining);
+
+  if (remaining <= 0) {
+    aw.rest.state = 'idle';
+    aw.rest.endAt = null;
+    clearActiveTimer();
+    persistState();
+    if (navigator.vibrate) {
+      try { navigator.vibrate([200, 100, 200]); } catch (_) {}
+    }
+    showToast('Rest over');
+  }
+}
+function startOrPauseRestTimer() {
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+
+  if (aw.rest.state === 'running') {
+    // pause
+    aw.rest.state = 'paused';
+    aw.rest.remainingMs = Math.max(0, aw.rest.endAt - Date.now());
+    aw.rest.endAt = null;
+    clearActiveTimer();
+  } else {
+    // start or resume
+    if (!aw.rest.remainingMs) aw.rest.remainingMs = aw.rest.durationSec * 1000;
+    aw.rest.endAt = Date.now() + aw.rest.remainingMs;
+    aw.rest.state = 'running';
+    ensureRestIntervalRunning();
+  }
+  persistState();
+  renderActiveWorkout();
+}
+function resetRestTimer() {
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+  aw.rest.state = 'idle';
+  aw.rest.remainingMs = aw.rest.durationSec * 1000;
+  aw.rest.endAt = null;
+  clearActiveTimer();
+  persistState();
+  renderActiveWorkout();
+}
+function skipRestTimer() {
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+  aw.rest.state = 'idle';
+  aw.rest.endAt = null;
+  aw.rest.remainingMs = aw.rest.durationSec * 1000;
+  clearActiveTimer();
+  persistState();
+  renderActiveWorkout();
+}
+function adjustRestTimer(deltaSeconds) {
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+  const deltaMs = (deltaSeconds || 0) * 1000;
+  if (aw.rest.state === 'running') {
+    aw.rest.endAt = aw.rest.endAt + deltaMs;
+    const remaining = Math.max(0, aw.rest.endAt - Date.now());
+    aw.rest.remainingMs = remaining;
+  } else {
+    aw.rest.durationSec = clamp(aw.rest.durationSec + deltaSeconds, 30, 600);
+    aw.rest.remainingMs = aw.rest.durationSec * 1000;
+  }
+  persistState();
+  renderActiveWorkout();
+}
+function clearActiveTimer() {
+  if (restIntervalId) { clearInterval(restIntervalId); restIntervalId = null; }
 }
 
 /* ---------- Exercise: progress ---------- */
@@ -729,7 +1131,6 @@ function updateDietPanels() {
 
 /* ---------- Diet: progress ---------- */
 function updateDietProgressSummary() {
-  // 7‑day avg cals + 7‑day weight delta
   let sum = 0, days = 0;
   for (let i = 0; i < 7; i++) {
     const d = new Date(); d.setDate(d.getDate() - i);
@@ -767,10 +1168,7 @@ function initWeightChart() {
       maintainAspectRatio: false,
       animation: { duration: 250 },
       plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: false }, // dynamic min/max
-        x: { grid: { display: false } }
-      }
+      scales: { y: { beginAtZero: false }, x: { grid: { display: false } } }
     }
   });
 }
@@ -789,14 +1187,11 @@ function updateWeightChart() {
   const last = sorted.slice(-14);
   const labels = last.map(e => formatDate(e.date));
   const data = last.map(e => e.weight);
-
   weightChart.data.labels = labels;
   weightChart.data.datasets[0].data = data;
-
   const { min, max } = computeYAxisBounds(data);
   weightChart.options.scales.y.min = min;
   weightChart.options.scales.y.max = max;
-
   weightChart.update();
 }
 
@@ -805,6 +1200,15 @@ function showSettings() {
   const n = document.getElementById('userName'); if (n) n.value = appState.profile.name || '';
   const c = document.getElementById('calorieGoal'); if (c) c.value = appState.profile.calorieGoal || 2200;
   const p = document.getElementById('proteinGoal'); if (p) p.value = appState.profile.proteinGoal || 160;
+
+  // Rest defaults
+  const comp = document.getElementById('defRestCompound');
+  const acc  = document.getElementById('defRestAccessory');
+  const auto = document.getElementById('restAutoAdjust');
+  if (comp) comp.value = appState.settings?.restDefaults?.compoundSec ?? 150;
+  if (acc)  acc.value  = appState.settings?.restDefaults?.accessorySec ?? 90;
+  if (auto) auto.checked = !!(appState.settings?.restDefaults?.autoAdjust);
+
   document.getElementById('settingsModal')?.classList.add('show');
 }
 function closeSettings() { document.getElementById('settingsModal')?.classList.remove('show'); }
@@ -813,6 +1217,13 @@ function handleProfileSave(e) {
   appState.profile.name = document.getElementById('userName').value || appState.profile.name;
   appState.profile.calorieGoal = parseInt(document.getElementById('calorieGoal').value, 10) || appState.profile.calorieGoal;
   appState.profile.proteinGoal = parseInt(document.getElementById('proteinGoal').value, 10) || appState.profile.proteinGoal;
+
+  // Rest defaults
+  const comp = clamp(parseInt(document.getElementById('defRestCompound').value || '150', 10), 30, 600);
+  const acc  = clamp(parseInt(document.getElementById('defRestAccessory').value || '90', 10), 30, 600);
+  const auto = !!document.getElementById('restAutoAdjust').checked;
+  appState.settings.restDefaults = { compoundSec: comp, accessorySec: acc, autoAdjust: auto };
+
   persistState();
   updateHome();
   closeSettings();
@@ -845,13 +1256,18 @@ function closeModal(e) {
 /* ---------- Persistence ---------- */
 function persistState() {
   if (!currentProfile) return;
+  const aw = appState.activeWorkout ? JSON.parse(JSON.stringify(appState.activeWorkout)) : null;
+  if (aw && aw.rest) delete aw.rest.timerId;
+
   currentProfile.data = {
     calorieGoal: appState.profile.calorieGoal,
     proteinGoal: appState.profile.proteinGoal,
+    settings: appState.settings,
     weightHistory: appState.weightHistory,
     dietLog: appState.dietLog,
     setsLog: appState.setsLog,
-    templates: appState.templates
+    templates: appState.templates,
+    activeWorkout: aw
   };
   saveCurrentProfile(currentProfile);
 }
@@ -873,7 +1289,7 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// Expose functions used in inline handlers (ensure they're global)
+/* ---------- Window bindings ---------- */
 window.navigateTo = navigateTo;
 window.switchSubtab = switchSubtab;
 window.goToExerciseLog = goToExerciseLog;
@@ -893,11 +1309,14 @@ window.addExerciseToDraft = addExerciseToDraft;
 window.moveTemplateItem = moveTemplateItem;
 window.removeTemplateItem = removeTemplateItem;
 window.changeTemplateItemSets = changeTemplateItemSets;
+window.changeTemplateItemType = changeTemplateItemType;
+window.changeTemplateItemRestMode = changeTemplateItemRestMode;
+window.changeTemplateItemRestSec = changeTemplateItemRestSec;
 window.handleTemplateSave = handleTemplateSave;
 window.editTemplate = editTemplate;
 window.duplicateTemplate = duplicateTemplate;
 window.deleteTemplate = deleteTemplate;
-window.useTemplate = useTemplate;
+window.useTemplate = useTemplate; // populates Today's Session (existing behavior)
 
 window.addExerciseToSession = addExerciseToSession;
 window.addSet = addSet;
@@ -905,3 +1324,18 @@ window.addSet = addSet;
 window.showWeightModal = showWeightModal;
 window.closeWeightModal = closeWeightModal;
 window.closeModal = closeModal;
+
+// Active workout
+window.startLiveFromTemplate = startLiveFromTemplate;
+window.openActiveWorkoutModal = openActiveWorkoutModal;
+window.closeActiveWorkoutModal = closeActiveWorkoutModal;
+window.resumeActiveWorkout = resumeActiveWorkout;
+window.logActiveSet = logActiveSet;
+window.nextExercise = nextExercise;
+window.prevExercise = prevExercise;
+window.discardActiveWorkout = discardActiveWorkout;
+window.finishActiveWorkout = finishActiveWorkout;
+window.startOrPauseRestTimer = startOrPauseRestTimer;
+window.resetRestTimer = resetRestTimer;
+window.skipRestTimer = skipRestTimer;
+window.adjustRestTimer = adjustRestTimer;
