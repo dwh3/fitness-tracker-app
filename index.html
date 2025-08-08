@@ -2,18 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#4F46E5">
     <title>FitTrack - Personal Training App</title>
-    
+
     <!-- PWA Manifest -->
     <link rel="manifest" href="manifest.json">
-    
+
     <!-- Apple Touch Icon -->
     <link rel="apple-touch-icon" href="images/icon-192.png">
-    
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -22,316 +23,478 @@
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <!-- Main App Container -->
-    <div class="app-container">
-        <!-- Header -->
-        <header class="app-header">
-            <div class="header-content">
-                <h1 class="header-title" id="pageTitle">Dashboard</h1>
-                <button class="btn-icon" onclick="showSettings()">
-                    <i class="bi bi-person-circle"></i>
+<!-- Main App Container -->
+<div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-content">
+            <h1 class="header-title" id="pageTitle">Dashboard</h1>
+            <button class="btn-icon" onclick="showSettings()">
+                <i class="bi bi-person-circle"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-content" id="appContent">
+        <!-- Dashboard Page -->
+        <div id="dashboard" class="page active">
+            <!-- Welcome (injected by JS on first load) -->
+
+            <!-- Today's Progress Circle -->
+            <div class="progress-circle-container">
+                <svg class="progress-circle" viewBox="0 0 200 200">
+                    <circle cx="100" cy="100" r="90" class="progress-circle-bg"></circle>
+                    <circle cx="100" cy="100" r="90" class="progress-circle-fill" id="progressCircle"></circle>
+                </svg>
+                <div class="progress-circle-content">
+                    <div class="calories-big" id="caloriesBig">0</div>
+                    <div class="calories-label">calories burned</div>
+                    <div class="calories-goal">of 500 goal</div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="bi bi-activity"></i>
+                    </div>
+                    <div class="stat-value" id="workoutsToday">0</div>
+                    <div class="stat-label">Workouts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="bi bi-clock"></i>
+                    </div>
+                    <div class="stat-value" id="minutesToday">0</div>
+                    <div class="stat-label">Minutes</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="bi bi-droplet"></i>
+                    </div>
+                    <div class="stat-value" id="waterToday">0</div>
+                    <div class="stat-label">Water (cups)</div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <button class="action-btn primary" onclick="quickWorkout()">
+                    <i class="bi bi-play-circle-fill"></i>
+                    <span>Quick Workout</span>
+                </button>
+                <button class="action-btn" onclick="logWater()">
+                    <i class="bi bi-droplet-fill"></i>
+                    <span>Log Water</span>
                 </button>
             </div>
-        </header>
 
-        <!-- Main Content Area -->
-        <main class="app-content" id="appContent">
-            <!-- Dashboard Page -->
-            <div id="dashboard" class="page active">
-                <!-- Today's Progress Circle -->
-                <div class="progress-circle-container">
-                    <svg class="progress-circle" viewBox="0 0 200 200">
-                        <circle cx="100" cy="100" r="90" class="progress-circle-bg"/>
-                        <circle cx="100" cy="100" r="90" class="progress-circle-fill" id="progressCircle"/>
-                    </svg>
-                    <div class="progress-circle-content">
-                        <div class="calories-big" id="caloriesBig">0</div>
-                        <div class="calories-label">calories burned</div>
-                        <div class="calories-goal">of 500 goal</div>
-                    </div>
+            <!-- Recent Activity -->
+            <div class="section-card">
+                <h3 class="section-title">Recent Activity</h3>
+                <div id="recentActivity" class="activity-list">
+                    <!-- Activity items will be inserted here -->
                 </div>
+            </div>
+        </div>
 
-                <!-- Quick Stats -->
+        <!-- Plan Page (NEW) -->
+        <div id="plan" class="page">
+            <div class="section-card">
+                <h3 class="section-title">Mesocycle</h3>
                 <div class="stats-row">
                     <div class="stat-card">
-                        <div class="stat-icon">
-                            <i class="bi bi-activity"></i>
-                        </div>
-                        <div class="stat-value" id="workoutsToday">0</div>
-                        <div class="stat-label">Workouts</div>
+                        <div class="stat-value" id="mesoPhase">—</div>
+                        <div class="stat-label">Phase</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-icon">
-                            <i class="bi bi-clock"></i>
-                        </div>
-                        <div class="stat-value" id="minutesToday">0</div>
-                        <div class="stat-label">Minutes</div>
+                        <div class="stat-value" id="mesoWeek">—</div>
+                        <div class="stat-label">Week</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-icon">
-                            <i class="bi bi-droplet"></i>
-                        </div>
-                        <div class="stat-value" id="waterToday">0</div>
-                        <div class="stat-label">Water (cups)</div>
+                        <div class="stat-value" id="targetWeight">—</div>
+                        <div class="stat-label">Target Wt</div>
                     </div>
                 </div>
-
-                <!-- Quick Actions -->
-                <div class="quick-actions">
-                    <button class="action-btn primary" onclick="quickWorkout()">
-                        <i class="bi bi-play-circle-fill"></i>
-                        <span>Quick Workout</span>
-                    </button>
-                    <button class="action-btn" onclick="logWater()">
-                        <i class="bi bi-droplet-fill"></i>
-                        <span>Log Water</span>
-                    </button>
-                </div>
-
-                <!-- Recent Activity -->
-                <div class="section-card">
-                    <h3 class="section-title">Recent Activity</h3>
-                    <div id="recentActivity" class="activity-list">
-                        <!-- Activity items will be inserted here -->
-                    </div>
-                </div>
+                <button class="btn-primary-full" onclick="showPlanModal()">Edit Plan</button>
             </div>
 
-            <!-- Workouts Page -->
-            <div id="workouts" class="page">
-                <!-- Search Bar -->
-                <div class="search-container">
-                    <i class="bi bi-search search-icon"></i>
-                    <input type="search" class="search-input" placeholder="Search workouts..." id="workoutSearch">
-                </div>
+            <div class="section-card">
+                <h3 class="section-title">Weekly Set Targets</h3>
+                <div class="stats-grid" id="targetsGrid"></div>
+            </div>
 
-                <!-- Workout Categories -->
-                <div class="category-pills">
-                    <button class="category-pill active" onclick="filterByType('all')">All</button>
-                    <button class="category-pill" onclick="filterByType('strength')">Strength</button>
-                    <button class="category-pill" onclick="filterByType('cardio')">Cardio</button>
-                    <button class="category-pill" onclick="filterByType('hiit')">HIIT</button>
-                    <button class="category-pill" onclick="filterByType('flexibility')">Flexibility</button>
+            <div class="section-card">
+                <h3 class="section-title">Daily Check‑in</h3>
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <div class="stat-value" id="sleepHoursStat">0</div>
+                        <div class="stat-label">Sleep (h)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="calsInStat">0</div>
+                        <div class="stat-label">Calories In</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="proteinStat">0</div>
+                        <div class="stat-label">Protein (g)</div>
+                    </div>
                 </div>
+                <button class="btn-text" onclick="showCheckinModal()">
+                    <i class="bi bi-plus-circle"></i> Log check‑in
+                </button>
+            </div>
+        </div>
 
-                <!-- Workouts List -->
-                <div id="workoutsList" class="workouts-list">
-                    <!-- Workout cards will be inserted here -->
-                </div>
+        <!-- Workouts Page -->
+        <div id="workouts" class="page">
+            <!-- Search Bar -->
+            <div class="search-container">
+                <i class="bi bi-search search-icon"></i>
+                <input type="search" class="search-input" placeholder="Search workouts..." id="workoutSearch">
+            </div>
 
-                <!-- Add Workout FAB -->
-                <button class="fab" onclick="showAddWorkout()">
-                    <i class="bi bi-plus-lg"></i>
+            <!-- Workout Categories -->
+            <div class="category-pills">
+                <button class="category-pill active" onclick="filterByType(this, 'all')">All</button>
+                <button class="category-pill" onclick="filterByType(this, 'strength')">Strength</button>
+                <button class="category-pill" onclick="filterByType(this, 'cardio')">Cardio</button>
+                <button class="category-pill" onclick="filterByType(this, 'hiit')">HIIT</button>
+                <button class="category-pill" onclick="filterByType(this, 'flexibility')">Flexibility</button>
+            </div>
+
+            <!-- Workouts List -->
+            <div id="workoutsList" class="workouts-list">
+                <!-- Workout cards will be inserted here -->
+            </div>
+
+            <!-- Add Workout FAB -->
+            <button class="fab" onclick="showAddWorkout()">
+                <i class="bi bi-plus-lg"></i>
+            </button>
+        </div>
+
+        <!-- Progress Page -->
+        <div id="progress" class="page">
+            <!-- Weight Chart -->
+            <div class="section-card">
+                <h3 class="section-title">Weight Tracking</h3>
+                <canvas id="weightChart" height="200"></canvas>
+                <button class="btn-text" onclick="showWeightModal()">
+                    <i class="bi bi-plus-circle"></i> Log Weight
                 </button>
             </div>
 
-            <!-- Progress Page -->
-            <div id="progress" class="page">
-                <!-- Weight Chart -->
-                <div class="section-card">
-                    <h3 class="section-title">Weight Tracking</h3>
-                    <canvas id="weightChart" height="200"></canvas>
-                    <button class="btn-text" onclick="showWeightModal()">
-                        <i class="bi bi-plus-circle"></i> Log Weight
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-box-value" id="totalWorkoutsCount">0</div>
+                    <div class="stat-box-label">Total Workouts</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-box-value" id="totalCaloriesCount">0</div>
+                    <div class="stat-box-label">Calories Burned</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-box-value" id="currentStreak">0</div>
+                    <div class="stat-box-label">Day Streak</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-box-value" id="avgWorkoutTime">0</div>
+                    <div class="stat-box-label">Avg Minutes</div>
+                </div>
+            </div>
+
+            <!-- Weekly Sets Chart -->
+            <div class="section-card">
+                <h3 class="section-title">Weekly Sets (last 4 weeks)</h3>
+                <canvas id="setsChart" height="200"></canvas>
+            </div>
+
+            <!-- Achievement Badges -->
+            <div class="section-card">
+                <h3 class="section-title">Achievements</h3>
+                <div class="badges-grid">
+                    <div class="badge-item earned">
+                        <i class="bi bi-star-fill"></i>
+                        <span>First Workout</span>
+                    </div>
+                    <div class="badge-item earned">
+                        <i class="bi bi-calendar-check-fill"></i>
+                        <span>7 Day Streak</span>
+                    </div>
+                    <div class="badge-item">
+                        <i class="bi bi-fire"></i>
+                        <span>1000 Calories</span>
+                    </div>
+                    <div class="badge-item">
+                        <i class="bi bi-trophy-fill"></i>
+                        <span>Month Champion</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timer Page -->
+        <div id="timer" class="page">
+            <div class="timer-container">
+                <div class="timer-display" id="timerDisplay">00:00</div>
+                <div class="timer-workout-name" id="timerWorkoutName">No workout selected</div>
+
+                <div class="timer-controls">
+                    <button class="timer-btn" id="timerStartBtn" onclick="startTimer()">
+                        <i class="bi bi-play-fill"></i>
+                    </button>
+                    <button class="timer-btn" id="timerPauseBtn" onclick="pauseTimer()" style="display:none;">
+                        <i class="bi bi-pause-fill"></i>
+                    </button>
+                    <button class="timer-btn secondary" onclick="resetTimer()">
+                        <i class="bi bi-stop-fill"></i>
                     </button>
                 </div>
 
-                <!-- Stats Grid -->
-                <div class="stats-grid">
-                    <div class="stat-box">
-                        <div class="stat-box-value" id="totalWorkoutsCount">0</div>
-                        <div class="stat-box-label">Total Workouts</div>
+                <div class="timer-stats">
+                    <div class="timer-stat">
+                        <span class="timer-stat-value" id="timerCalories">0</span>
+                        <span class="timer-stat-label">calories</span>
                     </div>
-                    <div class="stat-box">
-                        <div class="stat-box-value" id="totalCaloriesCount">0</div>
-                        <div class="stat-box-label">Calories Burned</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-box-value" id="currentStreak">0</div>
-                        <div class="stat-box-label">Day Streak</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-box-value" id="avgWorkoutTime">0</div>
-                        <div class="stat-box-label">Avg Minutes</div>
-                    </div>
-                </div>
-
-                <!-- Achievement Badges -->
-                <div class="section-card">
-                    <h3 class="section-title">Achievements</h3>
-                    <div class="badges-grid">
-                        <div class="badge-item earned">
-                            <i class="bi bi-star-fill"></i>
-                            <span>First Workout</span>
-                        </div>
-                        <div class="badge-item earned">
-                            <i class="bi bi-calendar-check-fill"></i>
-                            <span>7 Day Streak</span>
-                        </div>
-                        <div class="badge-item">
-                            <i class="bi bi-fire"></i>
-                            <span>1000 Calories</span>
-                        </div>
-                        <div class="badge-item">
-                            <i class="bi bi-trophy-fill"></i>
-                            <span>Month Champion</span>
-                        </div>
+                    <div class="timer-stat">
+                        <span class="timer-stat-value" id="timerHeartRate">--</span>
+                        <span class="timer-stat-label">heart rate</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Timer Page -->
-            <div id="timer" class="page">
-                <div class="timer-container">
-                    <div class="timer-display" id="timerDisplay">00:00</div>
-                    <div class="timer-workout-name" id="timerWorkoutName">No workout selected</div>
-                    
-                    <div class="timer-controls">
-                        <button class="timer-btn" id="timerStartBtn" onclick="startTimer()">
-                            <i class="bi bi-play-fill"></i>
-                        </button>
-                        <button class="timer-btn" id="timerPauseBtn" onclick="pauseTimer()" style="display:none;">
-                            <i class="bi bi-pause-fill"></i>
-                        </button>
-                        <button class="timer-btn secondary" onclick="resetTimer()">
-                            <i class="bi bi-stop-fill"></i>
-                        </button>
-                    </div>
-
-                    <div class="timer-stats">
-                        <div class="timer-stat">
-                            <span class="timer-stat-value" id="timerCalories">0</span>
-                            <span class="timer-stat-label">calories</span>
-                        </div>
-                        <div class="timer-stat">
-                            <span class="timer-stat-value" id="timerHeartRate">--</span>
-                            <span class="timer-stat-label">heart rate</span>
-                        </div>
-                    </div>
+            <!-- Session (NEW) -->
+            <div class="section-card">
+                <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+                    <span>Session</span>
+                    <button class="btn-text" onclick="showExerciseModal()">
+                        <i class="bi bi-plus-circle"></i> Add exercise
+                    </button>
                 </div>
-            </div>
-        </main>
-
-        <!-- Bottom Navigation -->
-        <nav class="bottom-nav">
-            <button class="nav-item active" onclick="navigateTo('dashboard')">
-                <i class="bi bi-house-fill"></i>
-                <span>Home</span>
-            </button>
-            <button class="nav-item" onclick="navigateTo('workouts')">
-                <i class="bi bi-grid"></i>
-                <span>Workouts</span>
-            </button>
-            <button class="nav-item timer-nav" onclick="navigateTo('timer')">
-                <i class="bi bi-play-circle-fill"></i>
-                <span>Timer</span>
-            </button>
-            <button class="nav-item" onclick="navigateTo('progress')">
-                <i class="bi bi-graph-up"></i>
-                <span>Progress</span>
-            </button>
-        </nav>
-    </div>
-
-    <!-- Modals -->
-    <!-- Add Workout Modal -->
-    <div class="modal-overlay" id="addWorkoutModal" onclick="closeModal(event)">
-        <div class="modal-sheet">
-            <div class="modal-header">
-                <h3>Create Workout</h3>
-                <button class="btn-close" onclick="closeAddWorkout()">×</button>
-            </div>
-            <div class="modal-body">
-                <form id="addWorkoutForm">
-                    <div class="form-group">
-                        <label>Workout Name</label>
-                        <input type="text" class="form-input" id="workoutName" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Type</label>
-                        <select class="form-input" id="workoutType">
-                            <option value="strength">Strength</option>
-                            <option value="cardio">Cardio</option>
-                            <option value="hiit">HIIT</option>
-                            <option value="flexibility">Flexibility</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Duration (minutes)</label>
-                        <input type="number" class="form-input" id="workoutDuration" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Difficulty</label>
-                        <select class="form-input" id="workoutDifficulty">
-                            <option value="beginner">Beginner</option>
-                            <option value="intermediate">Intermediate</option>
-                            <option value="advanced">Advanced</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn-primary-full">Create Workout</button>
-                </form>
+                <div id="sessionList"></div>
             </div>
         </div>
-    </div>
+    </main>
 
-    <!-- Weight Modal -->
-    <div class="modal-overlay" id="weightModal" onclick="closeModal(event)">
-        <div class="modal-sheet">
-            <div class="modal-header">
-                <h3>Log Weight</h3>
-                <button class="btn-close" onclick="closeWeightModal()">×</button>
-            </div>
-            <div class="modal-body">
-                <form id="weightForm">
-                    <div class="form-group">
-                        <label>Weight (lbs)</label>
-                        <input type="number" class="form-input" id="weightInput" step="0.1" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Date</label>
-                        <input type="date" class="form-input" id="dateInput" required>
-                    </div>
-                    <button type="submit" class="btn-primary-full">Log Weight</button>
-                </form>
-            </div>
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <button class="nav-item active" onclick="navigateTo('dashboard')">
+            <i class="bi bi-house-fill"></i>
+            <span>Home</span>
+        </button>
+        <button class="nav-item" onclick="navigateTo('plan')">
+            <i class="bi bi-bullseye"></i>
+            <span>Plan</span>
+        </button>
+        <button class="nav-item" onclick="navigateTo('workouts')">
+            <i class="bi bi-grid"></i>
+            <span>Workouts</span>
+        </button>
+        <button class="nav-item" onclick="navigateTo('timer')">
+            <i class="bi bi-play-circle-fill"></i>
+            <span>Timer</span>
+        </button>
+        <button class="nav-item" onclick="navigateTo('progress')">
+            <i class="bi bi-graph-up"></i>
+            <span>Progress</span>
+        </button>
+    </nav>
+</div>
+
+<!-- Modals -->
+<!-- Add Workout Modal -->
+<div class="modal-overlay" id="addWorkoutModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+        <div class="modal-header">
+            <h3>Create Workout</h3>
+            <button class="btn-close" onclick="closeAddWorkout()">×</button>
+        </div>
+        <div class="modal-body">
+            <form id="addWorkoutForm">
+                <div class="form-group">
+                    <label>Workout Name</label>
+                    <input type="text" class="form-input" id="workoutName" required>
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <select class="form-input" id="workoutType">
+                        <option value="strength">Strength</option>
+                        <option value="cardio">Cardio</option>
+                        <option value="hiit">HIIT</option>
+                        <option value="flexibility">Flexibility</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Duration (minutes)</label>
+                    <input type="number" class="form-input" id="workoutDuration" required>
+                </div>
+                <div class="form-group">
+                    <label>Difficulty</label>
+                    <select class="form-input" id="workoutDifficulty">
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary-full">Create Workout</button>
+            </form>
         </div>
     </div>
+</div>
 
-    <!-- Settings Modal -->
-    <div class="modal-overlay" id="settingsModal" onclick="closeModal(event)">
-        <div class="modal-sheet">
-            <div class="modal-header">
-                <h3>Profile Settings</h3>
-                <button class="btn-close" onclick="closeSettings()">×</button>
-            </div>
-            <div class="modal-body">
-                <form id="profileForm">
-                    <div class="form-group">
-                        <label>Name</label>
-                        <input type="text" class="form-input" id="userName">
-                    </div>
-                    <div class="form-group">
-                        <label>Daily Calorie Goal</label>
-                        <input type="number" class="form-input" id="calorieGoal" value="500">
-                    </div>
-                    <div class="form-group">
-                        <label>Daily Water Goal (cups)</label>
-                        <input type="number" class="form-input" id="waterGoal" value="8">
-                    </div>
-                    <button type="submit" class="btn-primary-full">Save Settings</button>
-                </form>
-            </div>
+<!-- Weight Modal -->
+<div class="modal-overlay" id="weightModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+        <div class="modal-header">
+            <h3>Log Weight</h3>
+            <button class="btn-close" onclick="closeWeightModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <form id="weightForm">
+                <div class="form-group">
+                    <label>Weight (lbs)</label>
+                    <input type="number" class="form-input" id="weightInput" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" class="form-input" id="dateInput" required>
+                </div>
+                <button type="submit" class="btn-primary-full">Log Weight</button>
+            </form>
         </div>
     </div>
+</div>
 
-    <!-- Toast Notification -->
-    <div class="toast" id="toast"></div>
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+        <div class="modal-header">
+            <h3>Profile Settings</h3>
+            <button class="btn-close" onclick="closeSettings()">×</button>
+        </div>
+        <div class="modal-body">
+            <form id="profileForm">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" class="form-input" id="userName">
+                </div>
+                <div class="form-group">
+                    <label>Daily Calorie Goal</label>
+                    <input type="number" class="form-input" id="calorieGoal" value="500">
+                </div>
+                <div class="form-group">
+                    <label>Daily Water Goal (cups)</label>
+                    <input type="number" class="form-input" id="waterGoal" value="8">
+                </div>
+                <button type="submit" class="btn-primary-full">Save Settings</button>
+            </form>
+        </div>
+    </div>
+</div>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Custom JS -->
-    <script src="js/app.js"></script>
+<!-- Plan Modal (NEW) -->
+<div class="modal-overlay" id="planModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+        <div class="modal-header">
+            <h3>Edit Mesocycle</h3>
+            <button class="btn-close" onclick="closePlanModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <form id="planForm">
+                <div class="form-group">
+                    <label>Phase</label>
+                    <select class="form-input" id="planPhase">
+                        <option value="bulk">Bulk</option>
+                        <option value="maintain">Maintain</option>
+                        <option value="cut">Cut</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Start Date</label>
+                    <input type="date" class="form-input" id="planStart">
+                </div>
+                <div class="form-group">
+                    <label>Length (weeks)</label>
+                    <input type="number" class="form-input" id="planWeeks" value="8" min="4" max="16">
+                </div>
+                <div class="form-group">
+                    <label>Target Weight (lbs)</label>
+                    <input type="number" class="form-input" id="planTargetWeight" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Target Body Fat (%)</label>
+                    <input type="number" class="form-input" id="planTargetBf" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Daily Calorie Goal</label>
+                    <input type="number" class="form-input" id="planCalories">
+                </div>
+                <div class="form-group">
+                    <label>Protein Target (g/day)</label>
+                    <input type="number" class="form-input" id="planProtein">
+                </div>
+                <button type="submit" class="btn-primary-full">Save Plan</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Daily Check‑in Modal (NEW) -->
+<div class="modal-overlay" id="checkinModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+        <div class="modal-header">
+            <h3>Daily Check‑in</h3>
+            <button class="btn-close" onclick="closeCheckinModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <form id="checkinForm">
+                <div class="form-group">
+                    <label>Sleep (hours)</label>
+                    <input type="number" class="form-input" id="sleepHoursInput" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Calories In</label>
+                    <input type="number" class="form-input" id="calsInInput">
+                </div>
+                <div class="form-group">
+                    <label>Protein (g)</label>
+                    <input type="number" class="form-input" id="proteinInput">
+                </div>
+                <button type="submit" class="btn-primary-full">Save</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Exercise Picker Modal (NEW) -->
+<div class="modal-overlay" id="exerciseModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+        <div class="modal-header">
+            <h3>Add Exercise</h3>
+            <button class="btn-close" onclick="closeExerciseModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="search-container">
+                <i class="bi bi-search search-icon"></i>
+                <input type="search" class="search-input" placeholder="Search exercises..." id="exerciseSearch">
+            </div>
+            <div id="exerciseList" class="workouts-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="toast" id="toast"></div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Custom JS -->
+<script src="js/app.js"></script>
 </body>
 </html>

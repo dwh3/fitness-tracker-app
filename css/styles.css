@@ -654,14 +654,6 @@ body {
     font-weight: 500;
 }
 
-.nav-item.timer-nav {
-    color: var(--primary);
-}
-
-.nav-item.timer-nav i {
-    font-size: 28px;
-}
-
 /* Modals */
 .modal-overlay {
     position: fixed;
@@ -845,7 +837,7 @@ body {
         --gray-600: #94A3B8;
         --gray-700: #CBD5E1;
         --gray-800: #E2E8F0;
-        --gray-900: #F1F5F9;
+        --gray-900: #F8F5F9;
         --dark: #F8FAFC;
     }
     

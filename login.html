@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>FitTrack - Welcome</title>
-    
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
-    
+
     <style>
         :root {
             --primary: #4F46E5;
@@ -22,627 +23,393 @@
             --white: #FFFFFF;
             --safe-area-top: env(safe-area-inset-top);
         }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            padding-top: var(--safe-area-top);
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            padding: 20px; padding-top: var(--safe-area-top);
         }
-
         .login-container {
-            width: 100%;
-            max-width: 400px;
-            background: var(--white);
-            border-radius: 24px;
-            padding: 40px 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%; max-width: 400px; background: var(--white);
+            border-radius: 24px; padding: 40px 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             animation: slideUp 0.4s ease;
         }
-
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .logo-section {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-
+        @keyframes slideUp { from { opacity:0; transform:translateY(30px);} to { opacity:1; transform:translateY(0);} }
+        .logo-section { text-align: center; margin-bottom: 40px; }
         .logo {
-            width: 80px;
-            height: 80px;
-            background: var(--primary);
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 20px;
-            font-size: 36px;
-            color: var(--white);
-            font-weight: bold;
-            animation: pulse 2s ease infinite;
+            width: 80px; height: 80px; background: var(--primary); border-radius: 20px;
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;
+            font-size: 36px; color: var(--white); font-weight: bold; animation: pulse 2s ease infinite;
         }
+        @keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+        .app-title { font-size: 28px; font-weight: 700; color: #1e293b; margin-bottom: 8px; }
+        .app-subtitle { color: var(--gray-500); font-size: 16px; }
 
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-
-        .app-title {
-            font-size: 28px;
-            font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 8px;
-        }
-
-        .app-subtitle {
-            color: var(--gray-500);
-            font-size: 16px;
-        }
-
-        /* Profile Selection */
-        .profile-selection {
-            display: none;
-        }
-
-        .profile-list {
-            margin-bottom: 20px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
+        .profile-selection { display: none; }
+        .profile-list { margin-bottom: 20px; max-height: 200px; overflow-y: auto; }
         .profile-item {
-            display: flex;
-            align-items: center;
-            padding: 16px;
-            margin-bottom: 12px;
-            border: 2px solid var(--gray-200);
-            border-radius: 16px;
-            cursor: pointer;
-            transition: all 0.2s;
+            display: flex; align-items: center; padding: 16px; margin-bottom: 12px;
+            border: 2px solid var(--gray-200); border-radius: 16px; cursor: pointer; transition: all 0.2s;
         }
-
-        .profile-item:hover {
-            border-color: var(--primary);
-            background: #f8f9ff;
-            transform: translateX(5px);
-        }
-
+        .profile-item:hover { border-color: var(--primary); background: #f8f9ff; transform: translateX(5px); }
         .profile-avatar {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background: var(--primary);
-            color: var(--white);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            font-weight: bold;
-            margin-right: 16px;
+            width: 48px; height: 48px; border-radius: 50%; background: var(--primary); color: var(--white);
+            display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; margin-right: 16px;
         }
+        .profile-info { flex: 1; }
+        .profile-name { font-weight: 600; color: #1e293b; font-size: 16px; }
+        .profile-stats { font-size: 14px; color: var(--gray-500); }
+        .profile-arrow { color: var(--gray-500); font-size: 20px; }
 
-        .profile-info {
-            flex: 1;
-        }
-
-        .profile-name {
-            font-weight: 600;
-            color: #1e293b;
-            font-size: 16px;
-        }
-
-        .profile-stats {
-            font-size: 14px;
-            color: var(--gray-500);
-        }
-
-        .profile-arrow {
-            color: var(--gray-500);
-            font-size: 20px;
-        }
-
-        /* Form Styles */
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #334155;
-            font-size: 14px;
-        }
-
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; margin-bottom: 8px; font-weight: 500; color: #334155; font-size: 14px; }
         .form-input {
-            width: 100%;
-            padding: 14px 16px;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            font-size: 16px;
-            transition: all 0.2s;
+            width: 100%; padding: 14px 16px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 16px; transition: all 0.2s;
         }
+        .form-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
 
-        .form-input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
-        }
-
-        .pin-input-group {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            margin-bottom: 30px;
-        }
-
+        .pin-input-group { display: flex; gap: 10px; justify-content: center; margin-bottom: 30px; }
         .pin-input {
-            width: 50px;
-            height: 60px;
-            text-align: center;
-            font-size: 24px;
-            font-weight: bold;
-            border: 2px solid var(--gray-200);
-            border-radius: 12px;
-            transition: all 0.2s;
+            width: 50px; height: 60px; text-align: center; font-size: 24px; font-weight: bold;
+            border: 2px solid var(--gray-200); border-radius: 12px; transition: all 0.2s;
         }
-
-        .pin-input:focus {
-            border-color: var(--primary);
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
-        }
+        .pin-input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
 
         .btn-primary {
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 12px;
-            background: var(--primary);
-            color: var(--white);
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
+            width: 100%; padding: 16px; border: none; border-radius: 12px; background: var(--primary);
+            color: var(--white); font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s;
         }
-
-        .btn-primary:hover {
-            background: var(--primary-dark);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(79,70,229,0.3);
-        }
-
-        .btn-primary:active {
-            transform: translateY(0);
-        }
+        .btn-primary:hover { background: var(--primary-dark); transform: translateY(-2px); box-shadow: 0 10px 20px rgba(79,70,229,0.3); }
+        .btn-primary:active { transform: translateY(0); }
 
         .btn-secondary {
-            width: 100%;
-            padding: 16px;
-            border: 2px solid var(--gray-200);
-            border-radius: 12px;
-            background: var(--white);
-            color: #334155;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 12px;
+            width: 100%; padding: 16px; border: 2px solid var(--gray-200); border-radius: 12px; background: var(--white);
+            color: #334155; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 12px;
         }
+        .btn-secondary:hover { background: var(--gray-100); border-color: var(--primary); color: var(--primary); }
 
-        .btn-secondary:hover {
-            background: var(--gray-100);
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        .quick-pins {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 20px;
-        }
-
+        .quick-pins { display: flex; gap: 8px; margin-bottom: 20px; }
         .quick-pin-btn {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid var(--gray-200);
-            border-radius: 8px;
-            background: var(--white);
-            font-size: 14px;
-            color: var(--gray-500);
-            cursor: pointer;
-            transition: all 0.2s;
+            flex: 1; padding: 10px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--white);
+            font-size: 14px; color: var(--gray-500); cursor: pointer; transition: all 0.2s;
         }
+        .quick-pin-btn:hover { background: var(--gray-100); border-color: var(--primary); color: var(--primary); }
 
-        .quick-pin-btn:hover {
-            background: var(--gray-100);
-            border-color: var(--primary);
-            color: var(--primary);
-        }
+        .message { padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; text-align: center; display: none; animation: slideDown 0.3s ease; }
+        @keyframes slideDown { from { opacity:0; transform: translateY(-10px);} to { opacity:1; transform: translateY(0);} }
+        .message.error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+        .message.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; }
 
-        .message {
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            text-align: center;
-            display: none;
-            animation: slideDown 0.3s ease;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .message.error {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #dc2626;
-        }
-
-        .message.success {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            color: #16a34a;
-        }
-
-        .text-center {
-            text-align: center;
-        }
-
-        .text-link {
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 500;
-            cursor: pointer;
-        }
-
-        .text-link:hover {
-            text-decoration: underline;
-        }
+        .text-center { text-align: center; }
+        .text-link { color: var(--primary); text-decoration: none; font-weight: 500; cursor: pointer; }
+        .text-link:hover { text-decoration: underline; }
 
         .mt-3 { margin-top: 20px; }
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="logo-section">
-            <div class="logo">FIT</div>
-            <h1 class="app-title">Welcome to FitTrack</h1>
-            <p class="app-subtitle">Your personal fitness journey</p>
-        </div>
-
-        <div id="message" class="message"></div>
-
-        <!-- Profile Selection Screen -->
-        <div id="profileSelection" class="profile-selection">
-            <div class="profile-list" id="profileList">
-                <!-- Profile items will be inserted here -->
-            </div>
-            <button class="btn-secondary" onclick="showNewProfile()">
-                <i class="bi bi-person-plus"></i> Create New Profile
-            </button>
-        </div>
-
-        <!-- New Profile Creation -->
-        <div id="newProfile" class="hidden">
-            <form onsubmit="createProfile(event)">
-                <div class="form-group">
-                    <label class="form-label">Your Name</label>
-                    <input type="text" class="form-input" id="userName" required 
-                           placeholder="Enter your name" maxlength="30">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Create a 4-Digit PIN</label>
-                    <div class="pin-input-group">
-                        <input type="number" class="pin-input" id="pin1" maxlength="1" required>
-                        <input type="number" class="pin-input" id="pin2" maxlength="1" required>
-                        <input type="number" class="pin-input" id="pin3" maxlength="1" required>
-                        <input type="number" class="pin-input" id="pin4" maxlength="1" required>
-                    </div>
-                    <div class="quick-pins">
-                        <button type="button" class="quick-pin-btn" onclick="setQuickPin('0000')">0000</button>
-                        <button type="button" class="quick-pin-btn" onclick="setQuickPin('1234')">1234</button>
-                        <button type="button" class="quick-pin-btn" onclick="setQuickPin('1111')">1111</button>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn-primary">Create Profile</button>
-                <button type="button" class="btn-secondary" onclick="showExistingProfiles()">
-                    Back to Profiles
-                </button>
-            </form>
-        </div>
-
-        <!-- PIN Entry Screen -->
-        <div id="pinEntry" class="hidden">
-            <h3 class="text-center" style="margin-bottom: 30px;">
-                Welcome back, <span id="selectedUserName"></span>!
-            </h3>
-            <form onsubmit="verifyPin(event)">
-                <div class="form-group">
-                    <label class="form-label text-center" style="display: block;">Enter your PIN</label>
-                    <div class="pin-input-group">
-                        <input type="number" class="pin-input" id="verify1" maxlength="1" required>
-                        <input type="number" class="pin-input" id="verify2" maxlength="1" required>
-                        <input type="number" class="pin-input" id="verify3" maxlength="1" required>
-                        <input type="number" class="pin-input" id="verify4" maxlength="1" required>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn-primary">Sign In</button>
-                <button type="button" class="btn-secondary" onclick="showExistingProfiles()">
-                    Switch Profile
-                </button>
-            </form>
-            
-            <p class="text-center mt-3">
-                <a class="text-link" onclick="forgotPin()">Forgot PIN?</a>
-            </p>
-        </div>
+<div class="login-container">
+    <div class="logo-section">
+        <div class="logo">FIT</div>
+        <h1 class="app-title">Welcome to FitTrack</h1>
+        <p class="app-subtitle">Your personal fitness journey</p>
     </div>
 
-    <script>
-        let selectedProfile = null;
+    <div id="message" class="message"></div>
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            setupPinInputs();
-            checkExistingProfiles();
-        });
+    <!-- Profile Selection Screen -->
+    <div id="profileSelection" class="profile-selection">
+        <div class="profile-list" id="profileList">
+            <!-- Profile items will be inserted here -->
+        </div>
+        <button class="btn-secondary" onclick="showNewProfile()">
+            <i class="bi bi-person-plus"></i> Create New Profile
+        </button>
+    </div>
 
-        // Check for existing profiles
-        function checkExistingProfiles() {
-            const profiles = getProfiles();
-            
-            if (profiles.length === 0) {
-                // No profiles exist, show create new profile
-                document.getElementById('newProfile').classList.remove('hidden');
-            } else {
-                // Show profile selection
-                showExistingProfiles();
-            }
-        }
+    <!-- New Profile Creation -->
+    <div id="newProfile" class="hidden">
+        <form onsubmit="createProfile(event)">
+            <div class="form-group">
+                <label class="form-label">Your Name</label>
+                <input type="text" class="form-input" id="userName" required
+                       placeholder="Enter your name" maxlength="30">
+            </div>
 
-        // Get all profiles from localStorage
-        function getProfiles() {
-            const profilesData = localStorage.getItem('fittrack_profiles');
-            return profilesData ? JSON.parse(profilesData) : [];
-        }
+            <div class="form-group">
+                <label class="form-label">Create a 4-Digit PIN</label>
+                <div class="pin-input-group">
+                    <input type="number" class="pin-input" id="pin1" maxlength="1" required>
+                    <input type="number" class="pin-input" id="pin2" maxlength="1" required>
+                    <input type="number" class="pin-input" id="pin3" maxlength="1" required>
+                    <input type="number" class="pin-input" id="pin4" maxlength="1" required>
+                </div>
+                <div class="quick-pins">
+                    <button type="button" class="quick-pin-btn" onclick="setQuickPin('0000')">0000</button>
+                    <button type="button" class="quick-pin-btn" onclick="setQuickPin('1234')">1234</button>
+                    <button type="button" class="quick-pin-btn" onclick="setQuickPin('1111')">1111</button>
+                </div>
+            </div>
 
-        // Save profiles to localStorage
-        function saveProfiles(profiles) {
-            localStorage.setItem('fittrack_profiles', JSON.stringify(profiles));
-        }
+            <button type="submit" class="btn-primary">Create Profile</button>
+            <button type="button" class="btn-secondary" onclick="showExistingProfiles()">
+                Back to Profiles
+            </button>
+        </form>
+    </div>
 
-        // Show existing profiles
-        function showExistingProfiles() {
-            const profiles = getProfiles();
-            hideAllSections();
-            
-            if (profiles.length === 0) {
-                showNewProfile();
-                return;
-            }
+    <!-- PIN Entry Screen -->
+    <div id="pinEntry" class="hidden">
+        <h3 class="text-center" style="margin-bottom: 30px;">
+            Welcome back, <span id="selectedUserName"></span>!
+        </h3>
+        <form onsubmit="verifyPin(event)">
+            <div class="form-group">
+                <label class="form-label text-center" style="display: block;">Enter your PIN</label>
+                <div class="pin-input-group">
+                    <input type="number" class="pin-input" id="verify1" maxlength="1" required>
+                    <input type="number" class="pin-input" id="verify2" maxlength="1" required>
+                    <input type="number" class="pin-input" id="verify3" maxlength="1" required>
+                    <input type="number" class="pin-input" id="verify4" maxlength="1" required>
+                </div>
+            </div>
 
-            const profileList = document.getElementById('profileList');
-            profileList.innerHTML = profiles.map(profile => {
-                const initials = profile.name.split(' ').map(n => n[0]).join('').toUpperCase();
-                const workouts = profile.data?.workoutHistory?.length || 0;
-                
-                return `
-                    <div class="profile-item" onclick="selectProfile('${profile.id}')">
-                        <div class="profile-avatar">${initials}</div>
-                        <div class="profile-info">
-                            <div class="profile-name">${profile.name}</div>
-                            <div class="profile-stats">${workouts} workouts completed</div>
-                        </div>
-                        <div class="profile-arrow">
-                            <i class="bi bi-chevron-right"></i>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            <button type="submit" class="btn-primary">Sign In</button>
+            <button type="button" class="btn-secondary" onclick="showExistingProfiles()">
+                Switch Profile
+            </button>
+        </form>
 
-            document.getElementById('profileSelection').style.display = 'block';
-        }
+        <p class="text-center mt-3">
+            <a class="text-link" onclick="forgotPin()">Forgot PIN?</a>
+        </p>
+    </div>
+</div>
 
-        // Show new profile creation
-        function showNewProfile() {
-            hideAllSections();
+<script>
+    let selectedProfile = null;
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        setupPinInputs();
+        checkExistingProfiles();
+    });
+
+    // Check for existing profiles
+    function checkExistingProfiles() {
+        const profiles = getProfiles();
+
+        if (profiles.length === 0) {
+            // No profiles exist, show create new profile
             document.getElementById('newProfile').classList.remove('hidden');
-            document.getElementById('userName').focus();
+        } else {
+            // Show profile selection
+            showExistingProfiles();
+        }
+    }
+
+    // Get all profiles from localStorage
+    function getProfiles() {
+        const profilesData = localStorage.getItem('fittrack_profiles');
+        return profilesData ? JSON.parse(profilesData) : [];
+    }
+
+    // Save profiles to localStorage
+    function saveProfiles(profiles) {
+        localStorage.setItem('fittrack_profiles', JSON.stringify(profiles));
+    }
+
+    // Show existing profiles
+    function showExistingProfiles() {
+        const profiles = getProfiles();
+        hideAllSections();
+
+        if (profiles.length === 0) {
+            showNewProfile();
+            return;
         }
 
-        // Hide all sections
-        function hideAllSections() {
-            document.getElementById('profileSelection').style.display = 'none';
-            document.getElementById('newProfile').classList.add('hidden');
-            document.getElementById('pinEntry').classList.add('hidden');
-            hideMessage();
+        const profileList = document.getElementById('profileList');
+        profileList.innerHTML = profiles.map(profile => {
+            const initials = profile.name.split(' ').map(n => n[0]).join('').toUpperCase();
+            const workouts = profile.data?.workoutHistory?.length || 0;
+
+            return `
+                <div class="profile-item" onclick="selectProfile('${profile.id}')">
+                    <div class="profile-avatar">${initials}</div>
+                    <div class="profile-info">
+                        <div class="profile-name">${profile.name}</div>
+                        <div class="profile-stats">${workouts} workouts completed</div>
+                    </div>
+                    <div class="profile-arrow">
+                        <i class="bi bi-chevron-right"></i>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        document.getElementById('profileSelection').style.display = 'block';
+    }
+
+    // Show new profile creation
+    function showNewProfile() {
+        hideAllSections();
+        document.getElementById('newProfile').classList.remove('hidden');
+        document.getElementById('userName').focus();
+    }
+
+    // Hide all sections
+    function hideAllSections() {
+        document.getElementById('profileSelection').style.display = 'none';
+        document.getElementById('newProfile').classList.add('hidden');
+        document.getElementById('pinEntry').classList.add('hidden');
+        hideMessage();
+    }
+
+    // Create new profile
+    function createProfile(event) {
+        event.preventDefault();
+
+        const name = document.getElementById('userName').value.trim();
+        const pin = document.getElementById('pin1').value +
+            document.getElementById('pin2').value +
+            document.getElementById('pin3').value +
+            document.getElementById('pin4').value;
+
+        if (pin.length !== 4) {
+            showMessage('Please enter a 4-digit PIN', 'error');
+            return;
+        }
+
+        const profiles = getProfiles();
+
+        // Check if name already exists
+        if (profiles.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+            showMessage('A profile with this name already exists', 'error');
+            return;
         }
 
         // Create new profile
-        function createProfile(event) {
-            event.preventDefault();
-            
-            const name = document.getElementById('userName').value.trim();
-            const pin = document.getElementById('pin1').value + 
-                       document.getElementById('pin2').value + 
-                       document.getElementById('pin3').value + 
-                       document.getElementById('pin4').value;
-            
-            if (pin.length !== 4) {
-                showMessage('Please enter a 4-digit PIN', 'error');
-                return;
+        const newProfile = {
+            id: Date.now().toString(),
+            name: name,
+            pin: pin, // In production, you'd hash this
+            createdAt: new Date().toISOString(),
+            data: {
+                workoutHistory: [],
+                weightHistory: [],
+                dailyStats: { calories: 0, workouts: 0, minutes: 0, water: 0 }
             }
+        };
 
-            const profiles = getProfiles();
-            
-            // Check if name already exists
-            if (profiles.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-                showMessage('A profile with this name already exists', 'error');
-                return;
-            }
+        profiles.push(newProfile);
+        saveProfiles(profiles);
 
-            // Create new profile
-            const newProfile = {
-                id: Date.now().toString(),
-                name: name,
-                pin: pin, // In production, you'd hash this
-                createdAt: new Date().toISOString(),
-                data: {
-                    workoutHistory: [],
-                    weightHistory: [],
-                    dailyStats: {
-                        calories: 0,
-                        workouts: 0,
-                        minutes: 0,
-                        water: 0
-                    }
-                }
-            };
+        // Set as current profile and redirect
+        localStorage.setItem('fittrack_current_profile', newProfile.id);
+        showMessage('Profile created successfully!', 'success');
 
-            profiles.push(newProfile);
-            saveProfiles(profiles);
-            
-            // Set as current profile and redirect
-            localStorage.setItem('fittrack_current_profile', newProfile.id);
-            showMessage('Profile created successfully!', 'success');
-            
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 1500);
+    }
+
+    // Select a profile
+    function selectProfile(profileId) {
+        const profiles = getProfiles();
+        selectedProfile = profiles.find(p => p.id === profileId);
+
+        if (!selectedProfile) return;
+
+        hideAllSections();
+        document.getElementById('selectedUserName').textContent = selectedProfile.name;
+        document.getElementById('pinEntry').classList.remove('hidden');
+
+        // Focus first PIN input
+        document.getElementById('verify1').focus();
+    }
+
+    // Verify PIN
+    function verifyPin(event) {
+        event.preventDefault();
+
+        const enteredPin = document.getElementById('verify1').value +
+            document.getElementById('verify2').value +
+            document.getElementById('verify3').value +
+            document.getElementById('verify4').value;
+
+        if (enteredPin === selectedProfile.pin) {
+            localStorage.setItem('fittrack_current_profile', selectedProfile.id);
+            showMessage('Success! Logging you in...', 'success');
+
             setTimeout(() => {
                 window.location.href = 'index.html';
-            }, 1500);
-        }
-
-        // Select a profile
-        function selectProfile(profileId) {
-            const profiles = getProfiles();
-            selectedProfile = profiles.find(p => p.id === profileId);
-            
-            if (!selectedProfile) return;
-            
-            hideAllSections();
-            document.getElementById('selectedUserName').textContent = selectedProfile.name;
-            document.getElementById('pinEntry').classList.remove('hidden');
-            
-            // Focus first PIN input
+            }, 1000);
+        } else {
+            showMessage('Incorrect PIN. Please try again.', 'error');
+            document.querySelectorAll('#pinEntry .pin-input').forEach(input => { input.value = ''; });
             document.getElementById('verify1').focus();
         }
+    }
 
-        // Verify PIN
-        function verifyPin(event) {
-            event.preventDefault();
-            
-            const enteredPin = document.getElementById('verify1').value + 
-                              document.getElementById('verify2').value + 
-                              document.getElementById('verify3').value + 
-                              document.getElementById('verify4').value;
-            
-            if (enteredPin === selectedProfile.pin) {
-                // Success - save current profile and redirect
-                localStorage.setItem('fittrack_current_profile', selectedProfile.id);
-                showMessage('Success! Logging you in...', 'success');
-                
-                setTimeout(() => {
-                    window.location.href = 'index.html';
-                }, 1000);
-            } else {
-                showMessage('Incorrect PIN. Please try again.', 'error');
-                // Clear PIN inputs
-                document.querySelectorAll('#pinEntry .pin-input').forEach(input => {
-                    input.value = '';
-                });
-                document.getElementById('verify1').focus();
-            }
-        }
+    // Setup PIN input auto-advance
+    function setupPinInputs() {
+        const pinInputs = document.querySelectorAll('.pin-input');
 
-        // Setup PIN input auto-advance
-        function setupPinInputs() {
-            const pinInputs = document.querySelectorAll('.pin-input');
-            
-            pinInputs.forEach((input, index) => {
-                input.addEventListener('input', function() {
-                    if (this.value.length === 1 && index < pinInputs.length - 1) {
-                        pinInputs[index + 1].focus();
-                    }
-                });
-                
-                input.addEventListener('keydown', function(e) {
-                    if (e.key === 'Backspace' && this.value === '' && index > 0) {
-                        pinInputs[index - 1].focus();
-                    }
-                });
-            });
-        }
-
-        // Set quick PIN
-        function setQuickPin(pin) {
-            const digits = pin.split('');
-            document.getElementById('pin1').value = digits[0];
-            document.getElementById('pin2').value = digits[1];
-            document.getElementById('pin3').value = digits[2];
-            document.getElementById('pin4').value = digits[3];
-        }
-
-        // Forgot PIN
-        function forgotPin() {
-            if (confirm(`Reset PIN for ${selectedProfile.name}? This will delete all workout data for this profile.`)) {
-                const profiles = getProfiles();
-                const index = profiles.findIndex(p => p.id === selectedProfile.id);
-                
-                if (index > -1) {
-                    profiles.splice(index, 1);
-                    saveProfiles(profiles);
-                    showMessage('Profile deleted. Please create a new profile.', 'success');
-                    setTimeout(() => {
-                        checkExistingProfiles();
-                    }, 2000);
+        pinInputs.forEach((input, index) => {
+            input.addEventListener('input', function() {
+                if (this.value.length === 1 && index < pinInputs.length - 1) {
+                    pinInputs[index + 1].focus();
                 }
+            });
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Backspace' && this.value === '' && index > 0) {
+                    pinInputs[index - 1].focus();
+                }
+            });
+        });
+    }
+
+    // Set quick PIN
+    function setQuickPin(pin) {
+        const digits = pin.split('');
+        document.getElementById('pin1').value = digits[0];
+        document.getElementById('pin2').value = digits[1];
+        document.getElementById('pin3').value = digits[2];
+        document.getElementById('pin4').value = digits[3];
+    }
+
+    // Forgot PIN
+    function forgotPin() {
+        if (!selectedProfile) return;
+        if (confirm(`Reset PIN for ${selectedProfile.name}? This will delete all workout data for this profile.`)) {
+            const profiles = getProfiles();
+            const index = profiles.findIndex(p => p.id === selectedProfile.id);
+
+            if (index > -1) {
+                profiles.splice(index, 1);
+                saveProfiles(profiles);
+                showMessage('Profile deleted. Please create a new profile.', 'success');
+                setTimeout(() => { checkExistingProfiles(); }, 2000);
             }
         }
+    }
 
-        // Show message
-        function showMessage(text, type) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = `message ${type}`;
-            messageDiv.style.display = 'block';
-        }
+    // Show message
+    function showMessage(text, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.textContent = text;
+        messageDiv.className = `message ${type}`;
+        messageDiv.style.display = 'block';
+    }
 
-        // Hide message
-        function hideMessage() {
-            document.getElementById('message').style.display = 'none';
-        }
-    </script>
+    // Hide message
+    function hideMessage() {
+        document.getElementById('message').style.display = 'none';
+    }
+</script>
 </body>
 </html>
