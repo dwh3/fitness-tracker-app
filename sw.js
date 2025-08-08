@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fittrack-v2';
+const CACHE_NAME = 'fittrack-v4';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -18,9 +18,7 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(resp => resp || fetch(event.request))
-  );
+  event.respondWith(caches.match(event.request).then(resp => resp || fetch(event.request)));
 });
 
 self.addEventListener('activate', event => {

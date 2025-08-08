@@ -51,12 +51,22 @@ let currentProfile = null;
 let weightChart = null;
 let setsChart = null;
 
+// Template draft used while building/editing
+let templateDraft = null;
+
 let appState = {
   profile: { name: '', calorieGoal: 2200, proteinGoal: 160 },
+
+  // Diet
   weightHistory: [],             // [{date:'YYYY-MM-DD', weight}]
   dietLog: {},                   // { 'YYYY-MM-DD': { entries:[{calories, protein, carbs, fat}], totals:{calories,protein,carbs,fat} } }
+
+  // Exercise
   setsLog: [],                   // [{date ISO, exerciseId, exerciseName, muscleGroup, weight, reps, rir}]
-  currentSession: { date: new Date().toISOString(), items: [] } // { items:[{exerciseId, name, muscleGroup, sets:[{weight,reps,rir,ts}]}] }
+  currentSession: { date: new Date().toISOString(), items: [] }, // items:[{exerciseId,name,muscleGroup,sets:[{weight,reps,rir,ts}]}]
+
+  // Templates
+  templates: []                  // [{id,name,notes,items:[{exerciseId,name,muscleGroup,sets}]}]
 };
 
 /* ---------- Init ---------- */
@@ -76,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     weightHistory: currentProfile.data?.weightHistory ?? [],
     dietLog: currentProfile.data?.dietLog ?? {},
     setsLog: currentProfile.data?.setsLog ?? [],
+    templates: currentProfile.data?.templates ?? [],
     currentSession: { date: new Date().toISOString(), items: [] }
   };
 
@@ -88,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // UI
   updateHome();
   renderSession();
+  renderTemplatesList();
   updateExerciseProgress();
   updateDietPanels();
 
@@ -119,9 +131,45 @@ function setupEventListeners() {
   const df = document.getElementById('dietForm');
   if (df) df.addEventListener('submit', handleDietLog);
 
+  // Template form
+  const tf = document.getElementById('templateForm');
+  if (tf) {
+    tf.addEventListener('submit', handleTemplateSave);
+  }
+
+  // Template inputs to drive Save enabled/disabled
+  const nameInput = document.getElementById('templateName');
+  if (nameInput) {
+    nameInput.addEventListener('input', updateTemplateSaveButtonState);
+  }
+
+  // Template exercise search
+  const templateSearch = document.getElementById('templateExerciseSearch');
+  if (templateSearch) {
+    templateSearch.addEventListener('input', function() {
+      renderTemplateExerciseResults(this.value.toLowerCase());
+    });
+  }
+
+  // Exercise search
+  const exerciseSearch = document.getElementById('exerciseSearch');
+  if (exerciseSearch) {
+    exerciseSearch.addEventListener('input', function() {
+      renderExerciseList(this.value.toLowerCase());
+    });
+  }
+
   // Block clicks inside bottom sheets
   document.querySelectorAll('.modal-sheet').forEach(sheet => {
     sheet.addEventListener('click', e => e.stopPropagation());
+  });
+
+  // Escape closes Template modal (if open)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const tm = document.getElementById('templateModal');
+      if (tm && tm.classList.contains('show')) closeTemplateModal();
+    }
   });
 
   // Touch feedback
@@ -150,9 +198,7 @@ function navigateTo(page) {
 function switchSubtab(section, tab, btn) {
   // Buttons
   const container = document.getElementById(section + 'Subtabs');
-  if (container) {
-    container.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
-  }
+  if (container) container.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
 
   // Panels
@@ -169,7 +215,6 @@ function switchSubtab(section, tab, btn) {
     updateDietProgressSummary();
   }
 }
-
 function goToExerciseLog() {
   navigateTo('exercise');
   switchSubtab('exercise', 'log', document.querySelector('#exerciseSubtabs .subtab-btn'));
@@ -224,31 +269,31 @@ function updateHome() {
 
 /* ---------- Exercise: session logging ---------- */
 function showExerciseModal() {
-  const list = document.getElementById('exerciseList');
   const search = document.getElementById('exerciseSearch');
-  if (!list) return;
-
-  const render = (q='') => {
-    const filtered = exerciseLibrary.filter(e =>
-      e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q)
-    );
-    list.innerHTML = filtered.map(ex => `
-      <div class="workout-card" onclick="addExerciseToSession(${ex.id})">
-        <div class="workout-header">
-          <div class="workout-title">${ex.name}</div>
-          <span class="workout-badge" style="background:var(--info);color:white;text-transform:capitalize;">${prettyGroup(ex.muscleGroup)}</span>
-        </div>
-      </div>`).join('');
-  };
-  render('');
-
   if (search) {
     search.value = '';
-    search.oninput = () => render(search.value.toLowerCase());
   }
-
+  renderExerciseList('');
   document.getElementById('exerciseModal')?.classList.add('show');
 }
+
+function renderExerciseList(q = '') {
+  const list = document.getElementById('exerciseList');
+  if (!list) return;
+  
+  const filtered = exerciseLibrary.filter(e =>
+    e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q)
+  );
+  
+  list.innerHTML = filtered.map(ex => `
+    <div class="workout-card" onclick="addExerciseToSession(${ex.id})">
+      <div class="workout-header">
+        <div class="workout-title">${ex.name}</div>
+        <span class="workout-badge" style="background:var(--info);color:white;text-transform:capitalize;">${prettyGroup(ex.muscleGroup)}</span>
+      </div>
+    </div>`).join('');
+}
+
 function closeExerciseModal() { document.getElementById('exerciseModal')?.classList.remove('show'); }
 
 function addExerciseToSession(id) {
@@ -305,35 +350,273 @@ function renderSession() {
         </div>
       </div>`).join('');
     return `
-      <div class="section-card">
+      <div class="workout-card">
         <div class="workout-header">
           <div class="workout-title">${item.name} <small style="color:var(--gray-500);text-transform:capitalize;">• ${prettyGroup(item.muscleGroup)}</small></div>
           <div class="workout-badge" style="background:var(--warning);color:white;">${item.sets.length} sets</div>
         </div>
         ${setsHtml || '<div class="activity-time">No sets yet</div>'}
-        <button class="btn-text" onclick="addSet(${item.exerciseId})">
+        <button class="btn-text" type="button" onclick="addSet(${item.exerciseId})">
           <i class="bi bi-plus-circle"></i> Add set
         </button>
       </div>`;
   }).join('');
 }
 
+/* ---------- Exercise: templates ---------- */
+function renderTemplatesList() {
+  const container = document.getElementById('templatesList');
+  if (!container) return;
+
+  if (!appState.templates.length) {
+    container.innerHTML = '<p style="color:var(--gray-500);text-align:center;">No templates yet. Create one to speed up logging.</p>';
+    return;
+  }
+
+  container.innerHTML = appState.templates.map(tpl => {
+    const exercises = tpl.items.map(it => `${it.name} ×${it.sets}`).join(' • ');
+    return `
+      <div class="workout-card">
+        <div class="workout-header">
+          <div class="workout-title">${tpl.name} ${tpl.notes ? `<small style="color:var(--gray-500);">• ${tpl.notes}</small>` : ''}</div>
+          <div>
+            <button class="icon-btn" type="button" title="Use template" onclick="useTemplate('${tpl.id}')"><i class="bi bi-play-circle"></i></button>
+            <button class="icon-btn" type="button" title="Edit" onclick="editTemplate('${tpl.id}')"><i class="bi bi-pencil"></i></button>
+            <button class="icon-btn" type="button" title="Duplicate" onclick="duplicateTemplate('${tpl.id}')"><i class="bi bi-files"></i></button>
+            <button class="icon-btn" type="button" title="Delete" onclick="deleteTemplate('${tpl.id}')"><i class="bi bi-trash"></i></button>
+          </div>
+        </div>
+        <div class="activity-time">${exercises || 'No exercises yet'}</div>
+      </div>`;
+  }).join('');
+}
+
+function showTemplateModal(id) {
+  const title = document.getElementById('templateModalTitle');
+  const nameInput = document.getElementById('templateName');
+  const notesInput = document.getElementById('templateNotes');
+  const search = document.getElementById('templateExerciseSearch');
+
+  // Prepare draft
+  if (id) {
+    const tpl = appState.templates.find(t => t.id === id);
+    if (!tpl) return;
+    templateDraft = JSON.parse(JSON.stringify(tpl));
+    if (title) title.textContent = 'Edit Template';
+  } else {
+    templateDraft = { id: null, name: '', notes: '', items: [] };
+    if (title) title.textContent = 'New Template';
+  }
+
+  if (nameInput) nameInput.value = templateDraft.name || '';
+  if (notesInput) notesInput.value = templateDraft.notes || '';
+
+  // Clear search and render results
+  if (search) {
+    search.value = '';
+  }
+  renderTemplateExerciseResults('');
+
+  // Render selected items
+  renderTemplateDraftItems();
+
+  document.getElementById('templateModal')?.classList.add('show');
+  if (nameInput) nameInput.focus();
+
+  // Ensure correct Save state
+  updateTemplateSaveButtonState();
+}
+
+function renderTemplateExerciseResults(q = '') {
+  const results = document.getElementById('templateExerciseResults');
+  if (!results) return;
+  
+  const filtered = exerciseLibrary.filter(e =>
+    e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q)
+  ).slice(0, 10);
+  
+  results.innerHTML = filtered.map(ex => `
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title">${ex.name}</div>
+        <button class="btn-text" type="button" onclick="addExerciseToDraft(${ex.id})"><i class="bi bi-plus-circle"></i> Add</button>
+      </div>
+      <div class="activity-time" style="text-transform:capitalize;">${prettyGroup(ex.muscleGroup)}</div>
+    </div>`).join('');
+}
+
+function closeTemplateModal() { 
+  document.getElementById('templateModal')?.classList.remove('show'); 
+  templateDraft = null; 
+}
+
+function renderTemplateDraftItems() {
+  const itemsContainer = document.getElementById('templateItems');
+  if (!itemsContainer) return;
+
+  if (!templateDraft.items.length) {
+    itemsContainer.innerHTML = '<p style="color:var(--gray-500);">No exercises added yet.</p>';
+    return;
+  }
+
+  itemsContainer.innerHTML = templateDraft.items.map((it, idx) => `
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title">${it.name} <small style="color:var(--gray-500);text-transform:capitalize;">• ${prettyGroup(it.muscleGroup)}</small></div>
+        <div>
+          <button class="icon-btn" type="button" title="Move up" onclick="moveTemplateItem(${idx}, -1)"><i class="bi bi-arrow-up"></i></button>
+          <button class="icon-btn" type="button" title="Move down" onclick="moveTemplateItem(${idx}, 1)"><i class="bi bi-arrow-down"></i></button>
+          <button class="icon-btn" type="button" title="Remove" onclick="removeTemplateItem(${idx})"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>
+      <div class="activity-time">
+        Sets:
+        <input type="number" class="form-input sets-input" min="1" max="10" value="${it.sets}" oninput="changeTemplateItemSets(${idx}, this.value)" />
+      </div>
+    </div>
+  `).join('');
+}
+
+function addExerciseToDraft(id) {
+  if (!templateDraft) return;
+  const ex = exerciseLibrary.find(e => e.id === id);
+  if (!ex) return;
+  if (!templateDraft.items.some(i => i.exerciseId === id)) {
+    templateDraft.items.push({ exerciseId: id, name: ex.name, muscleGroup: ex.muscleGroup, sets: 3 });
+  }
+  renderTemplateDraftItems();
+  updateTemplateSaveButtonState();
+}
+
+function moveTemplateItem(index, dir) {
+  if (!templateDraft) return;
+  const newIndex = index + dir;
+  if (newIndex < 0 || newIndex >= templateDraft.items.length) return;
+  const [item] = templateDraft.items.splice(index, 1);
+  templateDraft.items.splice(newIndex, 0, item);
+  renderTemplateDraftItems();
+  updateTemplateSaveButtonState();
+}
+
+function removeTemplateItem(index) {
+  if (!templateDraft) return;
+  templateDraft.items.splice(index, 1);
+  renderTemplateDraftItems();
+  updateTemplateSaveButtonState();
+}
+
+function changeTemplateItemSets(index, value) {
+  if (!templateDraft) return;
+  const v = Math.max(1, Math.min(10, parseInt(value || '3', 10)));
+  templateDraft.items[index].sets = v;
+  updateTemplateSaveButtonState();
+}
+
+function updateTemplateSaveButtonState() {
+  const btn = document.getElementById('saveTemplateBtn') || document.querySelector('#templateModal .btn-primary-full');
+  const name = (document.getElementById('templateName')?.value || '').trim();
+  const ok = !!(name && templateDraft && Array.isArray(templateDraft.items) && templateDraft.items.length > 0);
+  if (btn) btn.disabled = !ok;
+}
+
+function handleTemplateSave(e) {
+  e.preventDefault();
+  if (!templateDraft) {
+    showToast('Something went wrong. Please reopen the Template Builder.');
+    return;
+  }
+
+  const nameInput = document.getElementById('templateName');
+  const notesInput = document.getElementById('templateNotes');
+  const name = (nameInput?.value || '').trim();
+  const notes = (notesInput?.value || '').trim();
+
+  if (!name) { 
+    showToast('Please name your template'); 
+    return; 
+  }
+  if (!templateDraft.items.length) { 
+    showToast('Please add at least one exercise'); 
+    return; 
+  }
+
+  templateDraft.name = name;
+  templateDraft.notes = notes;
+
+  if (templateDraft.id) {
+    // Update existing template
+    const idx = appState.templates.findIndex(t => t.id === templateDraft.id);
+    if (idx > -1) {
+      appState.templates[idx] = JSON.parse(JSON.stringify(templateDraft));
+    }
+  } else {
+    // Create new template
+    templateDraft.id = Date.now().toString();
+    appState.templates.push(JSON.parse(JSON.stringify(templateDraft)));
+  }
+
+  persistState();
+  renderTemplatesList();
+  closeTemplateModal();
+  showToast('Template saved!');
+}
+
+/* Existing helpers */
+function editTemplate(id) { 
+  showTemplateModal(id); 
+}
+
+function duplicateTemplate(id) {
+  const tpl = appState.templates.find(t => t.id === id);
+  if (!tpl) return;
+  const copy = JSON.parse(JSON.stringify(tpl));
+  copy.id = Date.now().toString();
+  copy.name = `${tpl.name} (Copy)`;
+  appState.templates.push(copy);
+  persistState();
+  renderTemplatesList();
+  showToast('Template duplicated');
+}
+
+function deleteTemplate(id) {
+  const ok = confirm('Delete this template?');
+  if (!ok) return;
+  appState.templates = appState.templates.filter(t => t.id !== id);
+  persistState();
+  renderTemplatesList();
+  showToast('Template deleted');
+}
+
+function useTemplate(id) {
+  const tpl = appState.templates.find(t => t.id === id);
+  if (!tpl) return;
+  // Replace today's session with this template's exercises (sets start empty)
+  appState.currentSession = { date: new Date().toISOString(), items: [] };
+  tpl.items.forEach(it => {
+    appState.currentSession.items.push({ 
+      exerciseId: it.exerciseId, 
+      name: it.name, 
+      muscleGroup: it.muscleGroup, 
+      sets: [] 
+    });
+  });
+  persistState();
+  renderSession();
+  showToast(`Loaded "${tpl.name}"`);
+  navigateTo('exercise');
+  switchSubtab('exercise', 'log', document.querySelector('#exerciseSubtabs .subtab-btn'));
+}
+
 /* ---------- Exercise: progress ---------- */
 function weeklySetCountsByWeek(lastN = 4) {
   if (!appState.setsLog.length) return { labels: [], totals: [] };
   const logs = appState.setsLog.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
-
-  // Group by ISO week windows relative to now (7‑day buckets)
   const now = new Date();
   const labels = [];
   const totals = [];
   for (let i = lastN - 1; i >= 0; i--) {
-    const start = new Date(now);
-    start.setHours(0,0,0,0);
-    start.setDate(start.getDate() - (i * 7));
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
-
+    const start = new Date(now); start.setHours(0,0,0,0); start.setDate(start.getDate() - (i * 7));
+    const end = new Date(start); end.setDate(end.getDate() + 7);
     const count = logs.reduce((sum, s) => {
       const d = new Date(s.date);
       return sum + ((d >= start && d < end) ? 1 : 0);
@@ -343,7 +626,6 @@ function weeklySetCountsByWeek(lastN = 4) {
   }
   return { labels, totals };
 }
-
 function updateSetsChart() {
   const canvas = document.getElementById('setsChart');
   if (!canvas) return;
@@ -361,9 +643,7 @@ function updateSetsChart() {
     }
   });
 }
-
 function updateExerciseProgress() {
-  // Simple summary grid (total sets, unique exercises)
   const totalSets = appState.setsLog.length;
   const uniqueExercises = new Set(appState.setsLog.map(s => s.exerciseId)).size;
   const grid = `
@@ -436,8 +716,7 @@ function updateDietPanels() {
     const rows = [];
     rows.push(`<div class="mini-row header"><div>Date</div><div>Calories</div><div>Protein (g)</div></div>`);
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
+      const d = new Date(); d.setDate(d.getDate() - i);
       const key = d.toISOString().split('T')[0];
       const totals = appState.dietLog[key]?.totals || { calories:0, protein:0 };
       rows.push(`<div class="mini-row"><div>${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div><div>${totals.calories}</div><div>${totals.protein}</div></div>`);
@@ -448,12 +727,12 @@ function updateDietPanels() {
   updateDietProgressSummary();
 }
 
+/* ---------- Diet: progress ---------- */
 function updateDietProgressSummary() {
   // 7‑day avg cals + 7‑day weight delta
   let sum = 0, days = 0;
   for (let i = 0; i < 7; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+    const d = new Date(); d.setDate(d.getDate() - i);
     const key = d.toISOString().split('T')[0];
     if (appState.dietLog[key]?.totals) {
       sum += appState.dietLog[key].totals.calories;
@@ -470,6 +749,7 @@ function updateDietProgressSummary() {
   if (recent.length >= 2) {
     const diff = (recent[recent.length-1].weight - recent[0].weight);
     delta = (diff > 0 ? '+' : '') + diff.toFixed(1) + ' lb';
+    if (delta === '+0.0 lb' || delta === '0.0 lb') delta = '±0.0 lb';
   }
   el('weightDelta7d', delta);
 }
@@ -488,27 +768,25 @@ function initWeightChart() {
       animation: { duration: 250 },
       plugins: { legend: { display: false } },
       scales: {
-        y: { beginAtZero: false }, // we set min/max dynamically
+        y: { beginAtZero: false }, // dynamic min/max
         x: { grid: { display: false } }
       }
     }
   });
 }
-
 function computeYAxisBounds(values) {
   const minVal = Math.min(...values);
   const maxVal = Math.max(...values);
   if (!isFinite(minVal) || !isFinite(maxVal)) return { min: 0, max: 1 };
   let range = maxVal - minVal;
-  if (range < 2) range = 2;               // ensure visible range
-  const pad = Math.max(0.5, range * 0.1); // 10% padding or 0.5 lb
+  if (range < 2) range = 2;
+  const pad = Math.max(0.5, range * 0.1);
   return { min: Math.floor(minVal - pad), max: Math.ceil(maxVal + pad) };
 }
-
 function updateWeightChart() {
   if (!weightChart || !appState.weightHistory.length) return;
   const sorted = appState.weightHistory.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
-  const last = sorted.slice(-14); // show last 14 entries
+  const last = sorted.slice(-14);
   const labels = last.map(e => formatDate(e.date));
   const data = last.map(e => e.weight);
 
@@ -530,7 +808,6 @@ function showSettings() {
   document.getElementById('settingsModal')?.classList.add('show');
 }
 function closeSettings() { document.getElementById('settingsModal')?.classList.remove('show'); }
-
 function handleProfileSave(e) {
   e.preventDefault();
   appState.profile.name = document.getElementById('userName').value || appState.profile.name;
@@ -542,9 +819,9 @@ function handleProfileSave(e) {
   showToast('Settings saved!');
 }
 
+/* Weight logging */
 function showWeightModal() { document.getElementById('weightModal')?.classList.add('show'); }
 function closeWeightModal() { document.getElementById('weightModal')?.classList.remove('show'); }
-
 function handleWeightLog(e) {
   e.preventDefault();
   const weight = parseFloat(document.getElementById('weightInput').value);
@@ -573,7 +850,8 @@ function persistState() {
     proteinGoal: appState.profile.proteinGoal,
     weightHistory: appState.weightHistory,
     dietLog: appState.dietLog,
-    setsLog: appState.setsLog
+    setsLog: appState.setsLog,
+    templates: appState.templates
   };
   saveCurrentProfile(currentProfile);
 }
@@ -594,3 +872,36 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
 }
+
+// Expose functions used in inline handlers (ensure they're global)
+window.navigateTo = navigateTo;
+window.switchSubtab = switchSubtab;
+window.goToExerciseLog = goToExerciseLog;
+
+window.showSettings = showSettings;
+window.closeSettings = closeSettings;
+
+window.showDietModal = showDietModal;
+window.closeDietModal = closeDietModal;
+
+window.showExerciseModal = showExerciseModal;
+window.closeExerciseModal = closeExerciseModal;
+
+window.showTemplateModal = showTemplateModal;
+window.closeTemplateModal = closeTemplateModal;
+window.addExerciseToDraft = addExerciseToDraft;
+window.moveTemplateItem = moveTemplateItem;
+window.removeTemplateItem = removeTemplateItem;
+window.changeTemplateItemSets = changeTemplateItemSets;
+window.handleTemplateSave = handleTemplateSave;
+window.editTemplate = editTemplate;
+window.duplicateTemplate = duplicateTemplate;
+window.deleteTemplate = deleteTemplate;
+window.useTemplate = useTemplate;
+
+window.addExerciseToSession = addExerciseToSession;
+window.addSet = addSet;
+
+window.showWeightModal = showWeightModal;
+window.closeWeightModal = closeWeightModal;
+window.closeModal = closeModal;
