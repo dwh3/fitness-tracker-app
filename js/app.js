@@ -1,4 +1,66 @@
 // app.js
+
+// Add this to the top of your app.js file
+
+// Version management
+const APP_VERSION = '1.0.8'; // Increment this with each deployment
+
+// Check for updates
+async function checkForUpdates() {
+  if ('serviceWorker' in navigator) {
+    const registration = await navigator.serviceWorker.ready;
+    
+    // Check for updates every 30 seconds while app is active
+    setInterval(() => {
+      registration.update();
+    }, 30000);
+    
+    // Listen for new service worker
+    registration.addEventListener('updatefound', () => {
+      const newWorker = registration.installing;
+      
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          // New content available
+          showUpdateNotification();
+        }
+      });
+    });
+  }
+}
+
+// Show update notification
+function showUpdateNotification() {
+  const updateBanner = document.createElement('div');
+  updateBanner.className = 'update-banner';
+  updateBanner.innerHTML = `
+    <div class="update-content">
+      <span>A new version is available!</span>
+      <button onclick="updateApp()" class="update-btn">Update Now</button>
+    </div>
+  `;
+  document.body.appendChild(updateBanner);
+}
+
+// Force update
+function updateApp() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+    window.location.reload(true); // Force reload from server
+  }
+}
+
+// Add to your existing DOMContentLoaded event listener
+document.addEventListener('DOMContentLoaded', () => {
+  // ... your existing code ...
+  
+  // Check for updates
+  checkForUpdates();
+  
+  // Log version for debugging
+  console.log('App Version:', APP_VERSION);
+});
+
 'use strict';
 
 // Redirect if no profile selected
