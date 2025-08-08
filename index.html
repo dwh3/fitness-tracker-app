@@ -39,8 +39,6 @@
     <main class="app-content" id="appContent">
         <!-- Dashboard Page -->
         <div id="dashboard" class="page active">
-            <!-- Welcome (injected by JS on first load) -->
-
             <!-- Today's Progress Circle -->
             <div class="progress-circle-container">
                 <svg class="progress-circle" viewBox="0 0 200 200">
@@ -100,7 +98,7 @@
             </div>
         </div>
 
-        <!-- Plan Page (NEW) -->
+        <!-- Plan Page -->
         <div id="plan" class="page">
             <div class="section-card">
                 <h3 class="section-title">Mesocycle</h3>
@@ -150,13 +148,11 @@
 
         <!-- Workouts Page -->
         <div id="workouts" class="page">
-            <!-- Search Bar -->
             <div class="search-container">
                 <i class="bi bi-search search-icon"></i>
                 <input type="search" class="search-input" placeholder="Search workouts..." id="workoutSearch">
             </div>
 
-            <!-- Workout Categories -->
             <div class="category-pills">
                 <button class="category-pill active" onclick="filterByType(this, 'all')">All</button>
                 <button class="category-pill" onclick="filterByType(this, 'strength')">Strength</button>
@@ -165,12 +161,8 @@
                 <button class="category-pill" onclick="filterByType(this, 'flexibility')">Flexibility</button>
             </div>
 
-            <!-- Workouts List -->
-            <div id="workoutsList" class="workouts-list">
-                <!-- Workout cards will be inserted here -->
-            </div>
+            <div id="workoutsList" class="workouts-list"></div>
 
-            <!-- Add Workout FAB -->
             <button class="fab" onclick="showAddWorkout()">
                 <i class="bi bi-plus-lg"></i>
             </button>
@@ -181,7 +173,10 @@
             <!-- Weight Chart -->
             <div class="section-card">
                 <h3 class="section-title">Weight Tracking</h3>
-                <canvas id="weightChart" height="200"></canvas>
+                <!-- FIXED HEIGHT WRAPPER -->
+                <div class="chart-fixed">
+                    <canvas id="weightChart"></canvas>
+                </div>
                 <button class="btn-text" onclick="showWeightModal()">
                     <i class="bi bi-plus-circle"></i> Log Weight
                 </button>
@@ -267,7 +262,7 @@
                 </div>
             </div>
 
-            <!-- Session (NEW) -->
+            <!-- Session -->
             <div class="section-card">
                 <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
                     <span>Session</span>
@@ -396,7 +391,7 @@
     </div>
 </div>
 
-<!-- Plan Modal (NEW) -->
+<!-- Plan Modal -->
 <div class="modal-overlay" id="planModal" onclick="closeModal(event)">
     <div class="modal-sheet">
         <div class="modal-header">
@@ -443,7 +438,7 @@
     </div>
 </div>
 
-<!-- Daily Check‑in Modal (NEW) -->
+<!-- Daily Check‑in Modal -->
 <div class="modal-overlay" id="checkinModal" onclick="closeModal(event)">
     <div class="modal-sheet">
         <div class="modal-header">
@@ -470,7 +465,7 @@
     </div>
 </div>
 
-<!-- Exercise Picker Modal (NEW) -->
+<!-- Exercise Picker Modal -->
 <div class="modal-overlay" id="exerciseModal" onclick="closeModal(event)">
     <div class="modal-sheet">
         <div class="modal-header">

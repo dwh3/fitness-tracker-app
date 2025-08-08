@@ -804,8 +804,22 @@ body {
     transform: translateX(-50%) translateY(0);
 }
 
-/* Chart Container */
+/* === Weight chart: fixed-height wrapper === */
+.chart-fixed {
+    position: relative;
+    width: 100%;
+    height: 220px;       /* fixed height so the whole chart is visible */
+    max-height: 32vh;    /* also respect a portion of the viewport */
+}
+
 #weightChart {
+    width: 100% !important;
+    height: 100% !important;  /* Chart.js fills the wrapper */
+    margin: 0;
+}
+
+/* Chart Container */
+#setsChart {
     margin: 20px 0;
 }
 
@@ -822,6 +836,10 @@ body {
     
     .calories-big {
         font-size: 40px;
+    }
+
+    .chart-fixed {
+        height: 200px;
     }
 }
 

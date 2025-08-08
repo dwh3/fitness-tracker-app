@@ -480,22 +480,48 @@ function initWeightChart() {
     data: { labels: [], datasets: [{ label: 'Weight', data: [], tension: 0.4, fill: true }] },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
+      maintainAspectRatio: false, // fill the .chart-fixed height
+      animation: { duration: 250 },
       plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: false }, x: { grid: { display: false } } }
+      scales: {
+        y: { beginAtZero: false },         // we'll set min/max dynamically
+        x: { grid: { display: false } }
+      }
     }
   });
   updateWeightChart();
+}
+
+// Compute data-driven bounds with padding so the chart never looks "crushed" or "huge"
+function computeYAxisBounds(values) {
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+  if (!isFinite(minVal) || !isFinite(maxVal)) return { min: 0, max: 1 };
+  let range = maxVal - minVal;
+  if (range < 2) range = 2; // ensure some room if values are equal/close
+  const pad = Math.max(0.5, range * 0.1); // 10% margin (>= 0.5 lb)
+  const yMin = Math.floor(minVal - pad);
+  const yMax = Math.ceil(maxVal + pad);
+  return { min: yMin, max: yMax };
 }
 
 function updateWeightChart() {
   if (!weightChart || !appState.weightHistory.length) return;
   const sorted = appState.weightHistory.slice()
     .sort((a, b) => new Date(a.date) - new Date(b.date));
-  const labels = sorted.map(e => formatDate(e.date)).slice(-7);
-  const data = sorted.map(e => e.weight).slice(-7);
+  // show the most recent 7 entries (tweak to 14/30 if you prefer)
+  const last = sorted.slice(-7);
+  const labels = last.map(e => formatDate(e.date));
+  const data = last.map(e => e.weight);
+
   weightChart.data.labels = labels;
   weightChart.data.datasets[0].data = data;
+
+  // Apply dynamic bounds
+  const { min, max } = computeYAxisBounds(data);
+  weightChart.options.scales.y.min = min;
+  weightChart.options.scales.y.max = max;
+
   weightChart.update();
 }
 
