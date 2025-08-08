@@ -53,12 +53,22 @@ function mmss(totalMs) {
   return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+/* ---------- Global state ---------- */
 let currentProfile = null;
 let weightChart = null;
 let setsChart = null;
 
 // Template draft used while building/editing
 let templateDraft = null;
+
+// Diet: meal builder draft
+let mealDraft = null;
+
+// Diet: food picker selected
+let selectedFood = null;
+
+// Quick Add: track which adjust section is open
+let quickAdjustOpenId = null;
 
 let appState = {
   profile: { name: '', calorieGoal: 2200, proteinGoal: 160 },
@@ -70,7 +80,9 @@ let appState = {
 
   // Diet
   weightHistory: [],             // [{date:'YYYY-MM-DD', weight}]
-  dietLog: {},                   // { 'YYYY-MM-DD': { entries:[{calories, protein, carbs, fat}], totals:{calories,protein,carbs,fat} } }
+  dietLog: {},                   // { 'YYYY-MM-DD': { entries:[{...}], totals:{calories,protein,carbs,fat} } }
+  meals: [],                     // Saved meals (recipes)
+  favorites: { foods: [], meals: [] },
 
   // Exercise
   setsLog: [],                   // [{date ISO, exerciseId, exerciseName, muscleGroup, weight, reps, rir}]
@@ -80,7 +92,7 @@ let appState = {
   templates: [],                 // [{id,name,notes,items:[{exerciseId,name,muscleGroup,sets,type,restMode,restSec}]}]
 
   // Active workout (live) – persisted
-  activeWorkout: null            // see startLiveFromTemplate for shape
+  activeWorkout: null
 };
 
 /* ---------- Init ---------- */
@@ -89,7 +101,10 @@ document.addEventListener('DOMContentLoaded', () => {
   currentProfile = getCurrentProfile();
   if (!currentProfile) { logoutProfile(); return; }
 
-  // Seed appState
+  // Seed Food DB (once) for picker/meal builder
+  seedFoodDBIfMissing();
+
+  // Seed appState from profile
   appState = {
     ...appState,
     profile: {
@@ -102,6 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
     dietLog: currentProfile.data?.dietLog ?? {},
     setsLog: currentProfile.data?.setsLog ?? [],
     templates: currentProfile.data?.templates ?? [],
+    meals: currentProfile.data?.meals ?? [],
+    favorites: currentProfile.data?.favorites ?? { foods: [], meals: [] },
     currentSession: { date: new Date().toISOString(), items: [] },
     activeWorkout: currentProfile.data?.activeWorkout ?? null
   };
@@ -118,6 +135,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (di) di.value = todayISO();
   const dd = document.getElementById('dietDate');
   if (dd) dd.value = todayISO();
+  const fd = document.getElementById('foodDate');
+  if (fd) fd.value = todayISO();
+  const qad = document.getElementById('quickAddDate');
+  if (qad) qad.value = todayISO();
+  const mbd = document.getElementById('mealBuilderDate');
+  if (mbd) mbd.value = todayISO();
 
   // UI
   updateHome();
@@ -151,7 +174,7 @@ function setupEventListeners() {
   const wf = document.getElementById('weightForm');
   if (wf) wf.addEventListener('submit', handleWeightLog);
 
-  // Diet form
+  // Diet (manual) form
   const df = document.getElementById('dietForm');
   if (df) df.addEventListener('submit', handleDietLog);
 
@@ -166,7 +189,7 @@ function setupEventListeners() {
   // Template exercise search
   const templateSearch = document.getElementById('templateExerciseSearch');
   if (templateSearch) {
-    templateSearch.addEventListener('input', function() {
+    templateSearch.addEventListener('input', function () {
       renderTemplateExerciseResults(this.value.toLowerCase());
     });
   }
@@ -174,11 +197,33 @@ function setupEventListeners() {
   // Exercise search
   const exerciseSearch = document.getElementById('exerciseSearch');
   if (exerciseSearch) {
-    exerciseSearch.addEventListener('input', function() {
+    exerciseSearch.addEventListener('input', function () {
       renderExerciseList(this.value.toLowerCase());
     });
   }
 
+  // Food Picker events
+  const foodSearch = document.getElementById('foodSearch');
+  if (foodSearch) foodSearch.addEventListener('input', function () { renderFoodResults(this.value.toLowerCase()); });
+  const foodQty = document.getElementById('foodQty');
+  if (foodQty) foodQty.addEventListener('input', updateFoodCalc);
+  const foodUnit = document.getElementById('foodUnit');
+  if (foodUnit) foodUnit.addEventListener('change', updateFoodCalc);
+  const foodDate = document.getElementById('foodDate');
+  if (foodDate) foodDate.addEventListener('change', updateAddFoodBtnLabel);
+
+  // Quick Add: tabs are handled via inline onclick; date/meal inputs set on openQuickAdd()
+
+  // Meal Builder search
+  const mealFoodSearch = document.getElementById('mealFoodSearch');
+  if (mealFoodSearch) mealFoodSearch.addEventListener('input', function () { renderMealFoodResults(this.value.toLowerCase()); });
+
+  // Save meal buttons
+  const saveMealBtn = document.getElementById('saveMealBtn');
+  if (saveMealBtn) saveMealBtn.addEventListener('click', saveMealOnly);
+  const saveAndAddMealBtn = document.getElementById('saveAndAddMealBtn');
+  if (saveAndAddMealBtn) saveAndAddMealBtn.addEventListener('click', saveAndAddMeal);
+  
   // Escape closes Template or Active Workout modal (if open)
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -186,6 +231,10 @@ function setupEventListeners() {
       if (tm && tm.classList.contains('show')) closeTemplateModal();
       const awm = document.getElementById('activeWorkoutModal');
       if (awm && awm.classList.contains('show')) closeActiveWorkoutModal();
+      const qam = document.getElementById('quickAddModal');
+      if (qam && qam.classList.contains('show')) closeQuickAdd();
+      const mbm = document.getElementById('mealBuilderModal');
+      if (mbm && mbm.classList.contains('show')) closeMealBuilder();
     }
     if (e.key === 'Enter' && document.getElementById('activeWorkoutModal')?.classList.contains('show')) {
       logActiveSet();
@@ -1061,37 +1110,778 @@ function updateExerciseProgress() {
   if (gridEl) gridEl.innerHTML = grid;
 }
 
-/* ---------- Diet: logging ---------- */
-function showDietModal() {
-  const dd = document.getElementById('dietDate'); if (dd) dd.value = todayISO();
-  document.getElementById('dietModal')?.classList.add('show');
+/* ---------- Diet: Food library & picker ---------- */
+
+// Local Food DB shape:
+// { id, name, refGrams, perRef: {calories, protein, carbs, fat}, units: [{key,label,grams}], tags?:[] }
+const FOOD_DB_KEY = 'fittrack_food_db';
+
+const defaultFoods = [
+  { id:'chicken_breast_cooked', name:'Chicken Breast (cooked, skinless)', refGrams:100, perRef:{calories:165, protein:31, carbs:0, fat:3.6},
+    units:[ {key:'g',label:'g',grams:1}, {key:'oz',label:'oz',grams:28.35}, {key:'piece',label:'1 breast (120g)',grams:120} ], tags:['meat','protein'] },
+  { id:'salmon_cooked', name:'Salmon (cooked)', refGrams:100, perRef:{calories:208, protein:20, carbs:0, fat:13},
+    units:[ {key:'g',label:'g',grams:1}, {key:'oz',label:'oz',grams:28.35}, {key:'fillet',label:'1 fillet (170g)',grams:170} ], tags:['fish','protein'] },
+  { id:'egg_large', name:'Egg (large)', refGrams:50, perRef:{calories:78, protein:6, carbs:0.6, fat:5},
+    units:[ {key:'egg',label:'egg',grams:50}, {key:'g',label:'g',grams:1}, {key:'dozen',label:'dozen (12 eggs)',grams:600} ], tags:['protein'] },
+  { id:'whey_scoop', name:'Whey Protein (1 scoop)', refGrams:30, perRef:{calories:120, protein:24, carbs:3, fat:1.5},
+    units:[ {key:'scoop',label:'scoop (30g)',grams:30}, {key:'g',label:'g',grams:1}, {key:'oz',label:'oz',grams:28.35} ], tags:['supplement','protein'] },
+  { id:'greek_yogurt_nf', name:'Greek Yogurt (nonfat)', refGrams:170, perRef:{calories:100, protein:17, carbs:6, fat:0},
+    units:[ {key:'cup',label:'cup (227g)',grams:227}, {key:'container',label:'container (170g)',grams:170}, {key:'g',label:'g',grams:1} ], tags:['dairy','protein'] },
+  { id:'banana_medium', name:'Banana (medium)', refGrams:118, perRef:{calories:105, protein:1.3, carbs:27, fat:0.3},
+    units:[ {key:'banana',label:'banana',grams:118}, {key:'half',label:'1/2 banana',grams:59}, {key:'g',label:'g',grams:1} ], tags:['fruit'] },
+  { id:'apple_medium', name:'Apple (medium)', refGrams:182, perRef:{calories:95, protein:0.5, carbs:25, fat:0.3},
+    units:[ {key:'apple',label:'apple',grams:182}, {key:'g',label:'g',grams:1} ], tags:['fruit'] },
+  { id:'rice_white_cooked', name:'Rice, White (cooked)', refGrams:158, perRef:{calories:205, protein:4.3, carbs:45, fat:0.4},
+    units:[ {key:'cup',label:'cup cooked (158g)',grams:158}, {key:'half_cup',label:'1/2 cup cooked',grams:79}, {key:'g',label:'g',grams:1} ], tags:['grain','carb'] },
+  { id:'oats_dry', name:'Oats (dry)', refGrams:40, perRef:{calories:150, protein:5, carbs:27, fat:3},
+    units:[ {key:'half_cup',label:'1/2 cup (40g)',grams:40}, {key:'cup',label:'cup (80g)',grams:80}, {key:'g',label:'g',grams:1} ], tags:['grain','carb'] },
+  { id:'olive_oil', name:'Olive Oil', refGrams:14, perRef:{calories:119, protein:0, carbs:0, fat:14},
+    units:[ {key:'tbsp',label:'tbsp (14g)',grams:14}, {key:'tsp',label:'tsp (4.5g)',grams:4.5}, {key:'g',label:'g',grams:1} ], tags:['fat'] },
+  { id:'almonds', name:'Almonds', refGrams:28, perRef:{calories:164, protein:6, carbs:6, fat:14},
+    units:[ {key:'oz',label:'oz (28g)',grams:28}, {key:'handful',label:'handful (30g)',grams:30}, {key:'g',label:'g',grams:1} ], tags:['nuts','fat'] },
+  { id:'milk_whole', name:'Milk, Whole', refGrams:244, perRef:{calories:149, protein:7.7, carbs:11.7, fat:7.9},
+    units:[ {key:'cup',label:'cup (244g)',grams:244}, {key:'half_cup',label:'1/2 cup (122g)',grams:122}, {key:'g',label:'g',grams:1} ], tags:['dairy'] },
+  { id:'bread_slice', name:'Bread (1 slice)', refGrams:28, perRef:{calories:80, protein:3, carbs:14, fat:1},
+    units:[ {key:'slice',label:'slice (28g)',grams:28}, {key:'g',label:'g',grams:1} ], tags:['bread','carb'] },
+  { id:'broccoli_cooked', name:'Broccoli (cooked, chopped)', refGrams:156, perRef:{calories:55, protein:3.7, carbs:11.2, fat:0.6},
+    units:[ {key:'cup',label:'cup (156g)',grams:156}, {key:'g',label:'g',grams:1} ], tags:['veg'] }
+];
+
+function seedFoodDBIfMissing() {
+  if (!localStorage.getItem(FOOD_DB_KEY)) {
+    localStorage.setItem(FOOD_DB_KEY, JSON.stringify(defaultFoods));
+  }
 }
-function closeDietModal() { document.getElementById('dietModal')?.classList.remove('show'); }
+function getFoodDB() {
+  try {
+    const raw = localStorage.getItem(FOOD_DB_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+function getFoodById(id) {
+  const db = getFoodDB();
+  return db.find(f => f.id === id) || null;
+}
+function searchFoods(q) {
+  const db = getFoodDB();
+  if (!q) return db.slice(0, 25);
+  const qq = q.toLowerCase();
+  return db.filter(f =>
+    f.name.toLowerCase().includes(qq) ||
+    (f.tags || []).some(t => t.toLowerCase().includes(qq))
+  ).slice(0, 25);
+}
+function refLabel(food) {
+  const g = food.refGrams;
+  return g === 100 ? 'per 100 g' : `per ${g} g`;
+}
 
-function handleDietLog(e) {
-  e.preventDefault();
-  const date = document.getElementById('dietDate').value || todayISO();
-  const calories = parseInt(document.getElementById('dietCals').value, 10) || 0;
-  const protein = parseInt(document.getElementById('dietProtein').value, 10) || 0;
-  const carbs = parseInt(document.getElementById('dietCarbs').value, 10) || 0;
-  const fat = parseInt(document.getElementById('dietFat').value, 10) || 0;
+/* ----- Food Picker ----- */
+function openFoodPicker() {
+  const fd = document.getElementById('foodDate');
+  if (fd) fd.value = todayISO();
+  updateAddFoodBtnLabel();
 
-  if (!appState.dietLog[date]) appState.dietLog[date] = { entries: [], totals: { calories:0, protein:0, carbs:0, fat:0 } };
-  appState.dietLog[date].entries.push({ calories, protein, carbs, fat });
-  const t = appState.dietLog[date].totals;
-  t.calories += calories; t.protein += protein; t.carbs += carbs; t.fat += fat;
+  // reset UI
+  const fs = document.getElementById('foodSearch');
+  if (fs) fs.value = '';
+  renderFoodResults('');
+  selectedFood = null;
+  const area = document.getElementById('foodCalcArea');
+  if (area) area.style.display = 'none';
+
+  document.getElementById('foodPickerModal')?.classList.add('show');
+}
+function closeFoodPicker() {
+  document.getElementById('foodPickerModal')?.classList.remove('show');
+  selectedFood = null;
+}
+function renderFoodResults(q) {
+  const container = document.getElementById('foodResults');
+  if (!container) return;
+  const foods = searchFoods(q || '');
+  if (!foods.length) {
+    container.innerHTML = '<p class="activity-time" style="text-align:center;">No foods found</p>';
+    return;
+  }
+  container.innerHTML = foods.map(f => {
+    const per = refLabel(f);
+    const kcal = Math.round(f.perRef.calories);
+    return `
+      <div class="workout-card">
+        <div class="workout-header">
+          <div class="workout-title">${f.name}</div>
+          <button class="btn-text" type="button" onclick="selectFood('${f.id}')"><i class="bi bi-plus-circle"></i> Select</button>
+        </div>
+        <div class="activity-time">${kcal} kcal • P ${Math.round(f.perRef.protein)}g • C ${Math.round(f.perRef.carbs)}g • F ${Math.round(f.perRef.fat)}g • ${per}</div>
+      </div>`;
+  }).join('');
+}
+function selectFood(id) {
+  const food = getFoodById(id);
+  if (!food) return;
+  selectedFood = food;
+
+  // Fill UI
+  const nameEl = document.getElementById('foodSelectedName');
+  if (nameEl) nameEl.textContent = food.name;
+
+  // Units
+  const unitSel = document.getElementById('foodUnit');
+  if (unitSel) {
+    unitSel.innerHTML = '';
+    (food.units || []).forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.key;
+      opt.textContent = u.label;
+      unitSel.appendChild(opt);
+    });
+  }
+
+  // Qty default
+  const qty = document.getElementById('foodQty');
+  if (qty) qty.value = '1';
+
+  // Hint
+  const hint = document.getElementById('foodServingHint');
+  if (hint) hint.textContent = `Reference: ${refLabel(food)} • ${Math.round(food.perRef.calories)} kcal`;
+
+  const area = document.getElementById('foodCalcArea');
+  if (area) area.style.display = '';
+
+  updateFoodCalc();
+}
+function updateFoodCalc() {
+  if (!selectedFood) return;
+
+  const unitSel = document.getElementById('foodUnit');
+  const qtyInput = document.getElementById('foodQty');
+  if (!unitSel || !qtyInput) return;
+
+  const unitKey = unitSel.value;
+  const qty = parseFloat(qtyInput.value || '1');
+  const unit = (selectedFood.units || []).find(u => u.key === unitKey) || selectedFood.units[0];
+
+  const grams = (qty > 0 ? qty : 0) * (unit?.grams || 0);
+  const servings = selectedFood.refGrams > 0 ? grams / selectedFood.refGrams : 0;
+
+  const cals = Math.round((selectedFood.perRef.calories || 0) * servings);
+  const p = Math.round((selectedFood.perRef.protein || 0) * servings);
+  const c = Math.round((selectedFood.perRef.carbs || 0) * servings);
+  const f = Math.round((selectedFood.perRef.fat || 0) * servings);
+
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setVal('calcCals', isFinite(cals) ? cals : 0);
+  setVal('calcP', isFinite(p) ? p : 0);
+  setVal('calcC', isFinite(c) ? c : 0);
+  setVal('calcF', isFinite(f) ? f : 0);
+  setVal('calcServings', isFinite(servings) ? servings.toFixed(2) : '—');
+  setVal('calcPer', refLabel(selectedFood));
+
+  // Wire "Add" button
+  const btn = document.getElementById('addFoodBtn');
+  if (btn) {
+    btn.onclick = () => addSelectedFoodToLog({
+      calories: cals, protein: p, carbs: c, fat: f, grams, qty: qty || 0, unitKey: unit?.key || ''
+    });
+  }
+}
+function updateAddFoodBtnLabel() {
+  const btn = document.getElementById('addFoodBtn');
+  const fd = document.getElementById('foodDate');
+  if (!btn || !fd) return;
+  const dateStr = fd.value || todayISO();
+  const d = new Date(dateStr);
+  const today = new Date();
+  const label = d.toDateString() === today.toDateString()
+    ? 'Add to Today'
+    : `Add to ${d.toLocaleDateString('en-US', { month:'short', day:'numeric' })}`;
+  btn.textContent = label;
+}
+function addSelectedFoodToLog(calc) {
+  if (!selectedFood) return;
+
+  const date = document.getElementById('foodDate')?.value || todayISO();
+  const meal = document.getElementById('foodMeal')?.value || 'Snack';
+
+  ensureDietDay(date);
+
+  const entry = {
+    type: 'food',
+    source: 'food_db',
+    id: selectedFood.id,
+    name: selectedFood.name,
+    meal,
+    qty: calc.qty,
+    unit: calc.unitKey,
+    grams: calc.grams,
+    calories: calc.calories,
+    protein: calc.protein,
+    carbs: calc.carbs,
+    fat: calc.fat,
+    ref: { grams: selectedFood.refGrams, per: selectedFood.perRef }
+  };
+
+  appState.dietLog[date].entries.push(entry);
+  addTotals(appState.dietLog[date].totals, entry);
 
   persistState();
   updateHome();
   updateDietPanels();
-  closeDietModal();
-  showToast('Intake saved!');
+  closeFoodPicker();
+  showToast('Food added!');
 }
 
+/* ---------- Diet: Quick Add (Recents, Favorites, Meals) ---------- */
+
+function ensureDietDay(date) {
+  if (!appState.dietLog[date]) {
+    appState.dietLog[date] = { entries: [], totals: { calories:0, protein:0, carbs:0, fat:0 } };
+  }
+}
+function addTotals(totals, item) {
+  totals.calories += item.calories || 0;
+  totals.protein  += item.protein || 0;
+  totals.carbs    += item.carbs || 0;
+  totals.fat      += item.fat || 0;
+}
+
+function openQuickAdd() {
+  const qad = document.getElementById('quickAddDate');
+  if (qad) qad.value = todayISO();
+  const qam = document.getElementById('quickAddMeal');
+  if (qam) qam.value = 'Snack';
+
+  switchQuickAddTab('recents', document.querySelector('.qa-tab-btn'));
+  renderQuickAddRecents();
+  renderQuickAddFavorites();
+  renderQuickAddMeals();
+
+  document.getElementById('quickAddModal')?.classList.add('show');
+}
+function closeQuickAdd() {
+  document.getElementById('quickAddModal')?.classList.remove('show');
+  quickAdjustOpenId = null;
+}
+
+function switchQuickAddTab(tab, btn) {
+  document.querySelectorAll('.qa-tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.qa-panel').forEach(p => p.classList.add('hidden'));
+  const panel = document.querySelector(`.qa-panel[data-tab="${tab}"]`);
+  if (panel) panel.classList.remove('hidden');
+}
+
+function computeRecents(lastDays = 14) {
+  const cut = new Date();
+  cut.setDate(cut.getDate() - lastDays);
+
+  const foodCounts = new Map(); // id -> {count,last,name}
+  const mealCounts = new Map(); // id -> {count,last,name}
+
+  Object.entries(appState.dietLog).forEach(([dateKey, day]) => {
+    const d = new Date(dateKey);
+    if (d < cut) return;
+    (day.entries || []).forEach(e => {
+      if (e.type === 'food' && e.source === 'food_db' && e.id) {
+        const cur = foodCounts.get(e.id) || { count:0, last:0, name:e.name };
+        cur.count += 1; cur.last = Math.max(cur.last, d.getTime()); cur.name = e.name || cur.name;
+        foodCounts.set(e.id, cur);
+      } else if (e.type === 'meal' && e.mealId) {
+        const cur = mealCounts.get(e.mealId) || { count:0, last:0, name:e.name };
+        cur.count += 1; cur.last = Math.max(cur.last, d.getTime()); cur.name = e.name || cur.name;
+        mealCounts.set(e.mealId, cur);
+      }
+    });
+  });
+
+  const foods = Array.from(foodCounts.entries()).map(([id, v]) => ({ kind:'food', id, ...v }));
+  const meals = Array.from(mealCounts.entries()).map(([id, v]) => ({ kind:'meal', id, ...v }));
+
+  const all = foods.concat(meals).sort((a,b) => (b.count - a.count) || (b.last - a.last));
+  return all.slice(0, 20);
+}
+
+function isFavoriteFood(id) { return (appState.favorites?.foods || []).includes(id); }
+function isFavoriteMeal(id) { return (appState.favorites?.meals || []).includes(id); }
+function toggleFavoriteFood(id) {
+  const set = new Set(appState.favorites.foods);
+  if (set.has(id)) set.delete(id); else set.add(id);
+  appState.favorites.foods = Array.from(set);
+  persistState();
+  renderQuickAddFavorites();
+  renderQuickAddRecents();
+  showToast(set.has(id) ? 'Added to favorites' : 'Removed from favorites');
+}
+function toggleFavoriteMeal(id) {
+  const set = new Set(appState.favorites.meals);
+  if (set.has(id)) set.delete(id); else set.add(id);
+  appState.favorites.meals = Array.from(set);
+  persistState();
+  renderQuickAddFavorites();
+  renderQuickAddMeals();
+  renderQuickAddRecents();
+  showToast(set.has(id) ? 'Added to favorites' : 'Removed from favorites');
+}
+
+function renderQuickAddRecents() {
+  const el = document.getElementById('quickRecentsList');
+  if (!el) return;
+  const items = computeRecents(14);
+  if (!items.length) {
+    el.innerHTML = '<p class="activity-time" style="text-align:center;">No recent foods or meals yet.</p>';
+    return;
+  }
+  el.innerHTML = items.map(item => {
+    if (item.kind === 'food') {
+      const food = getFoodById(item.id);
+      if (!food) return '';
+      const fav = isFavoriteFood(item.id) ? 'bi-star-fill' : 'bi-star';
+      const favClass = isFavoriteFood(item.id) ? '' : 'inactive';
+      return `
+        <div class="workout-card">
+          <div class="workout-header">
+            <div class="workout-title"><i class="bi bi-egg-fried"></i> ${food.name}</div>
+            <div>
+              <button class="fav-btn ${favClass}" title="Favorite" onclick="toggleFavoriteFood('${food.id}')"><i class="bi ${fav}"></i></button>
+              <button class="btn-text" onclick="quickAddFood('${food.id}')"><i class="bi bi-plus-circle"></i> Add</button>
+              <button class="btn-text" onclick="toggleQuickAdjust('${food.id}','food')"><i class="bi bi-chevron-down"></i></button>
+            </div>
+          </div>
+          <div class="activity-time">${Math.round(food.perRef.calories)} kcal • ${refLabel(food)}</div>
+          <div id="qa-adjust-food-${food.id}" class="adjust-row" style="display:none;">
+            <div class="input-row">
+              <div class="input-mini">
+                <label class="muted">Qty</label>
+                <input type="number" class="form-input" id="qaQty-${food.id}" inputmode="decimal" min="0" step="0.1" value="1" />
+              </div>
+              <div class="input-mini">
+                <label class="muted">Unit</label>
+                <select class="form-input" id="qaUnit-${food.id}">
+                  ${(food.units||[]).map(u=>`<option value="${u.key}">${u.label}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <button class="btn-primary-full" style="margin-top:8px;" onclick="quickAddFood('${food.id}', true)">Add with portion</button>
+          </div>
+        </div>
+      `;
+    } else {
+      const meal = appState.meals.find(m => m.id === item.id);
+      if (!meal) return '';
+      const fav = isFavoriteMeal(meal.id) ? 'bi-star-fill' : 'bi-star';
+      const favClass = isFavoriteMeal(meal.id) ? '' : 'inactive';
+      return `
+        <div class="workout-card">
+          <div class="workout-header">
+            <div class="workout-title"><i class="bi bi-collection"></i> ${meal.name}</div>
+            <div>
+              <button class="fav-btn ${favClass}" title="Favorite" onclick="toggleFavoriteMeal('${meal.id}')"><i class="bi ${fav}"></i></button>
+              <button class="btn-text" onclick="quickAddMeal('${meal.id}')"><i class="bi bi-plus-circle"></i> Add</button>
+              <button class="btn-text" onclick="toggleQuickAdjust('${meal.id}','meal')"><i class="bi bi-chevron-down"></i></button>
+            </div>
+          </div>
+          <div class="activity-time">${Math.round(meal.perServingTotals.calories)} kcal • P ${Math.round(meal.perServingTotals.protein)}g • C ${Math.round(meal.perServingTotals.carbs)}g • F ${Math.round(meal.perServingTotals.fat)}g • per 1 serving</div>
+          <div id="qa-adjust-meal-${meal.id}" class="adjust-row" style="display:none;">
+            <div class="input-row">
+              <div class="input-mini">
+                <label class="muted">Servings</label>
+                <input type="number" class="form-input" id="qaServ-${meal.id}" inputmode="decimal" min="0" step="0.1" value="1" />
+              </div>
+            </div>
+            <button class="btn-primary-full" style="margin-top:8px;" onclick="quickAddMeal('${meal.id}', true)">Add with servings</button>
+          </div>
+        </div>
+      `;
+    }
+  }).join('');
+}
+function renderQuickAddFavorites() {
+  const el = document.getElementById('quickFavoritesList');
+  if (!el) return;
+  const favFoods = (appState.favorites.foods || []).map(getFoodById).filter(Boolean);
+  const favMeals = (appState.favorites.meals || []).map(id => appState.meals.find(m => m.id === id)).filter(Boolean);
+  if (!favFoods.length && !favMeals.length) {
+    el.innerHTML = '<p class="activity-time" style="text-align:center;">No favorites yet. Star foods or meals to see them here.</p>';
+    return;
+  }
+  const foodsHtml = favFoods.map(food => `
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title"><i class="bi bi-egg-fried"></i> ${food.name}</div>
+        <div>
+          <button class="fav-btn" title="Unfavorite" onclick="toggleFavoriteFood('${food.id}')"><i class="bi bi-star-fill"></i></button>
+          <button class="btn-text" onclick="quickAddFood('${food.id}')"><i class="bi bi-plus-circle"></i> Add</button>
+          <button class="btn-text" onclick="toggleQuickAdjust('${food.id}','food')"><i class="bi bi-chevron-down"></i></button>
+        </div>
+      </div>
+      <div id="qa-adjust-food-${food.id}" class="adjust-row" style="display:none;">
+        <div class="input-row">
+          <div class="input-mini">
+            <label class="muted">Qty</label>
+            <input type="number" class="form-input" id="qaQty-${food.id}" inputmode="decimal" min="0" step="0.1" value="1" />
+          </div>
+          <div class="input-mini">
+            <label class="muted">Unit</label>
+            <select class="form-input" id="qaUnit-${food.id}">
+              ${(food.units||[]).map(u=>`<option value="${u.key}">${u.label}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <button class="btn-primary-full" style="margin-top:8px;" onclick="quickAddFood('${food.id}', true)">Add with portion</button>
+      </div>
+    </div>
+  `).join('');
+  const mealsHtml = favMeals.map(meal => `
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title"><i class="bi bi-collection"></i> ${meal.name}</div>
+        <div>
+          <button class="fav-btn" title="Unfavorite" onclick="toggleFavoriteMeal('${meal.id}')"><i class="bi bi-star-fill"></i></button>
+          <button class="btn-text" onclick="quickAddMeal('${meal.id}')"><i class="bi bi-plus-circle"></i> Add</button>
+          <button class="btn-text" onclick="toggleQuickAdjust('${meal.id}','meal')"><i class="bi bi-chevron-down"></i></button>
+        </div>
+      </div>
+      <div id="qa-adjust-meal-${meal.id}" class="adjust-row" style="display:none;">
+        <div class="input-row">
+          <div class="input-mini">
+            <label class="muted">Servings</label>
+            <input type="number" class="form-input" id="qaServ-${meal.id}" inputmode="decimal" min="0" step="0.1" value="1" />
+          </div>
+        </div>
+        <button class="btn-primary-full" style="margin-top:8px;" onclick="quickAddMeal('${meal.id}', true)">Add with servings</button>
+      </div>
+    </div>
+  `).join('');
+  el.innerHTML = foodsHtml + mealsHtml;
+}
+function renderQuickAddMeals() {
+  const el = document.getElementById('quickMealsList');
+  if (!el) return;
+  if (!appState.meals.length) {
+    el.innerHTML = '<p class="activity-time" style="text-align:center;">No saved meals yet.</p>';
+    return;
+  }
+  el.innerHTML = appState.meals.map(meal => `
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title"><i class="bi bi-collection"></i> ${meal.name}</div>
+        <div>
+          <button class="fav-btn ${isFavoriteMeal(meal.id) ? '' : 'inactive'}" onclick="toggleFavoriteMeal('${meal.id}')"><i class="bi ${isFavoriteMeal(meal.id) ? 'bi-star-fill' : 'bi-star'}"></i></button>
+          <button class="btn-text" onclick="quickAddMeal('${meal.id}')"><i class="bi bi-plus-circle"></i> Add</button>
+          <button class="btn-text" onclick="toggleQuickAdjust('${meal.id}','meal')"><i class="bi bi-chevron-down"></i></button>
+        </div>
+      </div>
+      <div class="activity-time">${Math.round(meal.perServingTotals.calories)} kcal • P ${Math.round(meal.perServingTotals.protein)}g • C ${Math.round(meal.perServingTotals.carbs)}g • F ${Math.round(meal.perServingTotals.fat)}g • per 1 serving</div>
+      <div id="qa-adjust-meal-${meal.id}" class="adjust-row" style="display:none;">
+        <div class="input-row">
+          <div class="input-mini">
+            <label class="muted">Servings</label>
+            <input type="number" class="form-input" id="qaServ-${meal.id}" inputmode="decimal" min="0" step="0.1" value="1" />
+          </div>
+        </div>
+        <button class="btn-primary-full" style="margin-top:8px;" onclick="quickAddMeal('${meal.id}', true)">Add with servings</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleQuickAdjust(id, kind) {
+  if (quickAdjustOpenId && quickAdjustOpenId !== `${kind}:${id}`) {
+    const prev = document.getElementById(`qa-adjust-${quickAdjustOpenId.replace(':','-')}`);
+    if (prev) prev.style.display = 'none';
+  }
+  const el = document.getElementById(`qa-adjust-${kind}-${id}`);
+  if (!el) return;
+  const showing = el.style.display !== 'none';
+  el.style.display = showing ? 'none' : 'block';
+  quickAdjustOpenId = showing ? null : `${kind}:${id}`;
+}
+
+function quickAddFood(foodId, withPortion = false) {
+  const food = getFoodById(foodId);
+  if (!food) return;
+  const date = document.getElementById('quickAddDate')?.value || todayISO();
+  const meal = document.getElementById('quickAddMeal')?.value || 'Snack';
+
+  let qty = 1;
+  let unitKey = (food.units && food.units[0]?.key) || 'g';
+
+  if (withPortion) {
+    const qtyEl = document.getElementById(`qaQty-${food.id}`);
+    const unitEl = document.getElementById(`qaUnit-${food.id}`);
+    const qv = parseFloat(qtyEl?.value || '1');
+    if (isFinite(qv) && qv > 0) qty = qv;
+    unitKey = unitEl?.value || unitKey;
+  }
+
+  // compute grams/macros
+  const unit = (food.units || []).find(u => u.key === unitKey) || food.units[0];
+  const grams = (qty > 0 ? qty : 0) * (unit?.grams || 0);
+  const servings = food.refGrams > 0 ? grams / food.refGrams : 0;
+
+  const entry = {
+    type:'food', source:'food_db', id:food.id, name:food.name, meal,
+    qty, unit: unitKey, grams,
+    calories: Math.round((food.perRef.calories || 0) * servings),
+    protein: Math.round((food.perRef.protein || 0) * servings),
+    carbs:   Math.round((food.perRef.carbs || 0) * servings),
+    fat:     Math.round((food.perRef.fat || 0) * servings),
+    ref:{ grams: food.refGrams, per: food.perRef }
+  };
+
+  ensureDietDay(date);
+  appState.dietLog[date].entries.push(entry);
+  addTotals(appState.dietLog[date].totals, entry);
+  persistState();
+  updateHome();
+  updateDietPanels();
+  showToast('Added!');
+}
+function quickAddMeal(mealId, withServings = false) {
+  const meal = appState.meals.find(m => m.id === mealId);
+  if (!meal) return;
+  const date = document.getElementById('quickAddDate')?.value || todayISO();
+  const mealTag = document.getElementById('quickAddMeal')?.value || 'Snack';
+
+  let servings = 1;
+  if (withServings) {
+    const servEl = document.getElementById(`qaServ-${meal.id}`);
+    const sv = parseFloat(servEl?.value || '1');
+    if (isFinite(sv) && sv > 0) servings = sv;
+  }
+
+  const totals = scaleTotals(meal.perServingTotals, servings);
+
+  const entry = {
+    type:'meal', mealId: meal.id, name: meal.name, meal: mealTag, servings,
+    calories: totals.calories, protein: totals.protein, carbs: totals.carbs, fat: totals.fat,
+    components: meal.items.map(it => {
+      const factor = servings;
+      const scaledGrams = it.grams * factor;
+      const refG = it.perRefSnapshot.refGrams || it.perRefSnapshot.ref || 100;
+      const ratio = refG ? (scaledGrams / refG) : 0;
+      return {
+        foodId: it.foodId, name: it.name,
+        grams: scaledGrams, qty: it.qty * factor, unitKey: it.unitKey,
+        calories: Math.round((it.perRefSnapshot.calories || 0) * ratio),
+        protein:  Math.round((it.perRefSnapshot.protein  || 0) * ratio),
+        carbs:    Math.round((it.perRefSnapshot.carbs    || 0) * ratio),
+        fat:      Math.round((it.perRefSnapshot.fat      || 0) * ratio)
+      };
+    })
+  };
+
+  ensureDietDay(date);
+  appState.dietLog[date].entries.push(entry);
+  addTotals(appState.dietLog[date].totals, entry);
+  persistState();
+  updateHome();
+  updateDietPanels();
+  showToast('Meal added!');
+}
+function scaleTotals(perServingTotals, servings) {
+  return {
+    calories: Math.round((perServingTotals.calories || 0) * servings),
+    protein:  Math.round((perServingTotals.protein  || 0) * servings),
+    carbs:    Math.round((perServingTotals.carbs    || 0) * servings),
+    fat:      Math.round((perServingTotals.fat      || 0) * servings)
+  };
+}
+
+/* ---------- Diet: Meal Builder ---------- */
+function openMealBuilder() {
+  // Initialize draft
+  mealDraft = { id: null, name: '', refServings: 1, items: [], perServingTotals:{ calories:0, protein:0, carbs:0, fat:0 } };
+  const name = document.getElementById('mealName'); if (name) name.value = '';
+  const mfs = document.getElementById('mealFoodSearch'); if (mfs) mfs.value = '';
+  const mbd = document.getElementById('mealBuilderDate'); if (mbd) mbd.value = todayISO();
+  const mbm = document.getElementById('mealBuilderMeal'); if (mbm) mbm.value = 'Snack';
+  renderMealFoodResults('');
+  renderMealItems();
+  recomputeMealTotals();
+  document.getElementById('mealBuilderModal')?.classList.add('show');
+}
+function closeMealBuilder() {
+  document.getElementById('mealBuilderModal')?.classList.remove('show');
+  mealDraft = null;
+}
+function renderMealFoodResults(q) {
+  const container = document.getElementById('mealFoodResults');
+  if (!container) return;
+  const foods = searchFoods(q || '');
+  if (!foods.length) {
+    container.innerHTML = '<p class="activity-time" style="text-align:center;">No foods found</p>';
+    return;
+  }
+  container.innerHTML = foods.map(f => `
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title">${f.name}</div>
+        <button class="btn-text" onclick="addFoodToMealDraft('${f.id}')"><i class="bi bi-plus-circle"></i> Add</button>
+      </div>
+      <div class="activity-time">${Math.round(f.perRef.calories)} kcal • ${refLabel(f)}</div>
+    </div>
+  `).join('');
+}
+function addFoodToMealDraft(foodId) {
+  if (!mealDraft) return;
+  const f = getFoodById(foodId);
+  if (!f) return;
+  // default 1 × first unit
+  const unit = (f.units || [])[0] || { key:'g', label:'g', grams:1 };
+  const item = {
+    foodId: f.id,
+    name: f.name,
+    qty: 1,
+    unitKey: unit.key,
+    grams: unit.grams * 1,
+    perRefSnapshot: { calories:f.perRef.calories, protein:f.perRef.protein, carbs:f.perRef.carbs, fat:f.perRef.fat, refGrams:f.refGrams }
+  };
+  mealDraft.items.push(item);
+  renderMealItems();
+  recomputeMealTotals();
+}
+function removeMealItem(index) {
+  if (!mealDraft) return;
+  mealDraft.items.splice(index, 1);
+  renderMealItems();
+  recomputeMealTotals();
+}
+function changeMealItemQty(index, value) {
+  if (!mealDraft) return;
+  const v = parseFloat(value || '1');
+  const it = mealDraft.items[index]; if (!it) return;
+  if (!isFinite(v) || v <= 0) return;
+  it.qty = v;
+  const gramsPerUnit = getFoodById(it.foodId)?.units.find(u => u.key === it.unitKey)?.grams || 0;
+  it.grams = gramsPerUnit * v;
+  renderMealItems();
+  recomputeMealTotals();
+}
+function changeMealItemUnit(index, unitKey) {
+  if (!mealDraft) return;
+  const it = mealDraft.items[index]; if (!it) return;
+  it.unitKey = unitKey;
+  const gramsPerUnit = getFoodById(it.foodId)?.units.find(u => u.key === unitKey)?.grams || 0;
+  it.grams = gramsPerUnit * it.qty;
+  renderMealItems();
+  recomputeMealTotals();
+}
+function renderMealItems() {
+  const container = document.getElementById('mealItemsList');
+  if (!container) return;
+  if (!mealDraft || !mealDraft.items.length) {
+    container.innerHTML = '<p class="activity-time">No items yet. Add foods above.</p>';
+    return;
+  }
+  container.innerHTML = mealDraft.items.map((it, idx) => {
+    const food = getFoodById(it.foodId);
+    const unitOptions = (food?.units || []).map(u => `<option value="${u.key}" ${u.key===it.unitKey?'selected':''}>${u.label}</option>`).join('');
+    return `
+      <div class="meal-item-row">
+        <div class="meal-item-head">
+          <div class="activity-name">${it.name}</div>
+          <button class="icon-btn" title="Remove" onclick="removeMealItem(${idx})"><i class="bi bi-trash"></i></button>
+        </div>
+        <div class="meal-item-controls">
+          <div class="input-mini">
+            <label class="muted">Qty</label>
+            <input type="number" class="form-input" inputmode="decimal" min="0" step="0.1" value="${it.qty}" onchange="changeMealItemQty(${idx}, this.value)" />
+          </div>
+          <div class="input-mini">
+            <label class="muted">Unit</label>
+            <select class="form-input" onchange="changeMealItemUnit(${idx}, this.value)">${unitOptions}</select>
+          </div>
+        </div>
+        <div class="activity-time">${Math.round(it.grams)} g total • ${refLabel({refGrams: it.perRefSnapshot.refGrams || 100})}</div>
+      </div>
+    `;
+  }).join('');
+}
+function recomputeMealTotals() {
+  if (!mealDraft) return;
+  let c=0,p=0,cb=0,f=0;
+  mealDraft.items.forEach(it => {
+    const refG = it.perRefSnapshot.refGrams || 100;
+    const ratio = refG ? (it.grams / refG) : 0;
+    c  += (it.perRefSnapshot.calories || 0) * ratio;
+    p  += (it.perRefSnapshot.protein  || 0) * ratio;
+    cb += (it.perRefSnapshot.carbs    || 0) * ratio;
+    f  += (it.perRefSnapshot.fat      || 0) * ratio;
+  });
+  mealDraft.perServingTotals = {
+    calories: Math.round(c), protein: Math.round(p), carbs: Math.round(cb), fat: Math.round(f)
+  };
+  const set = (id,v)=>{const el=document.getElementById(id); if(el) el.textContent = v;};
+  set('mealTotalCals', mealDraft.perServingTotals.calories);
+  set('mealTotalP', mealDraft.perServingTotals.protein);
+  set('mealTotalC', mealDraft.perServingTotals.carbs);
+  set('mealTotalF', mealDraft.perServingTotals.fat);
+  set('mealItemCount', mealDraft.items.length);
+}
+function saveMealOnly() { saveMeal(false); }
+function saveAndAddMeal() { saveMeal(true); }
+function saveMeal(addAfter) {
+  if (!mealDraft) { showToast('Open the Meal Builder first'); return; }
+  const name = (document.getElementById('mealName')?.value || '').trim();
+  if (!name) { showToast('Please name your meal'); return; }
+  if (!mealDraft.items.length) { showToast('Add at least one food'); return; }
+
+  const meal = {
+    id: 'meal_' + Date.now().toString(),
+    name,
+    refServings: 1,
+    items: mealDraft.items.map(it => ({
+      foodId: it.foodId, name: it.name, qty: it.qty, unitKey: it.unitKey, grams: it.grams,
+      perRefSnapshot: { ...it.perRefSnapshot }
+    })),
+    perServingTotals: { ...mealDraft.perServingTotals }
+  };
+
+  appState.meals.push(meal);
+  persistState();
+  renderQuickAddMeals();
+  showToast('Meal saved');
+
+  if (addAfter) {
+    const date = document.getElementById('mealBuilderDate')?.value || todayISO();
+    const mealTag = document.getElementById('mealBuilderMeal')?.value || 'Snack';
+    const totals = scaleTotals(meal.perServingTotals, 1);
+    const entry = {
+      type:'meal', mealId: meal.id, name: meal.name, meal: mealTag, servings: 1,
+      calories: totals.calories, protein: totals.protein, carbs: totals.carbs, fat: totals.fat,
+      components: meal.items.map(it => {
+        const refG = it.perRefSnapshot.refGrams || 100;
+        const ratio = refG ? (it.grams / refG) : 0;
+        return {
+          foodId: it.foodId, name: it.name, grams: it.grams, qty: it.qty, unitKey: it.unitKey,
+          calories: Math.round((it.perRefSnapshot.calories || 0) * ratio),
+          protein:  Math.round((it.perRefSnapshot.protein  || 0) * ratio),
+          carbs:    Math.round((it.perRefSnapshot.carbs    || 0) * ratio),
+          fat:      Math.round((it.perRefSnapshot.fat      || 0) * ratio)
+        };
+      })
+    };
+    ensureDietDay(date);
+    appState.dietLog[date].entries.push(entry);
+    addTotals(appState.dietLog[date].totals, entry);
+    persistState();
+    updateHome();
+    updateDietPanels();
+    showToast('Meal added to today');
+  }
+
+  closeMealBuilder();
+}
+
+/* ---------- Diet: panels & progress ---------- */
 function updateDietPanels() {
   // Today panel
   const t = todayISO();
-  const day = appState.dietLog[t] || { entries: [], totals: { calories:0, protein:0 } };
+  const day = appState.dietLog[t] || { entries: [], totals: { calories:0, protein:0, carbs:0, fat:0 } };
   const el = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   el('todayCals', day.totals.calories || 0);
   el('todayProtein', day.totals.protein || 0);
@@ -1102,17 +1892,31 @@ function updateDietPanels() {
     if (!day.entries.length) {
       list.innerHTML = '<p style="color:var(--gray-500);text-align:center;">No entries yet.</p>';
     } else {
-      list.innerHTML = day.entries.map((it, idx) => `
-        <div class="activity-item">
-          <div class="activity-details">
-            <div class="activity-name">Entry ${idx+1} • ${it.calories} kcal</div>
-            <div class="activity-time">${it.protein || 0}g P • ${it.carbs || 0}g C • ${it.fat || 0}g F</div>
-          </div>
-        </div>`).join('');
+      list.innerHTML = day.entries.map((it, idx) => {
+        if (it.type === 'meal') {
+          return `
+            <div class="activity-item">
+              <div class="activity-icon"><i class="bi bi-collection"></i></div>
+              <div class="activity-details">
+                <div class="activity-name">${it.name} • ${it.calories} kcal</div>
+                <div class="activity-time">${it.meal || '—'} • ${it.servings} serving${it.servings>1?'s':''} • ${it.protein||0}g P • ${it.carbs||0}g C • ${it.fat||0}g F</div>
+              </div>
+            </div>`;
+        }
+        // food
+        return `
+          <div class="activity-item">
+            <div class="activity-icon"><i class="bi bi-egg-fried"></i></div>
+            <div class="activity-details">
+              <div class="activity-name">${it.name || `Entry ${idx+1}`} • ${it.calories} kcal</div>
+              <div class="activity-time">${it.meal || '—'} • ${(it.protein || 0)}g P • ${(it.carbs || 0)}g C • ${(it.fat || 0)}g F</div>
+            </div>
+          </div>`;
+      }).join('');
     }
   }
 
-  // Last 7 days history
+  // Last 7 days history (calories + protein)
   const hist = document.getElementById('dietHistory');
   if (hist) {
     const rows = [];
@@ -1267,6 +2071,8 @@ function persistState() {
     dietLog: appState.dietLog,
     setsLog: appState.setsLog,
     templates: appState.templates,
+    meals: appState.meals,
+    favorites: appState.favorites,
     activeWorkout: aw
   };
   saveCurrentProfile(currentProfile);
@@ -1316,7 +2122,7 @@ window.handleTemplateSave = handleTemplateSave;
 window.editTemplate = editTemplate;
 window.duplicateTemplate = duplicateTemplate;
 window.deleteTemplate = deleteTemplate;
-window.useTemplate = useTemplate; // populates Today's Session (existing behavior)
+window.useTemplate = useTemplate;
 
 window.addExerciseToSession = addExerciseToSession;
 window.addSet = addSet;
@@ -1339,3 +2145,25 @@ window.startOrPauseRestTimer = startOrPauseRestTimer;
 window.resetRestTimer = resetRestTimer;
 window.skipRestTimer = skipRestTimer;
 window.adjustRestTimer = adjustRestTimer;
+
+// Diet: Food Picker
+window.openFoodPicker = openFoodPicker;
+window.closeFoodPicker = closeFoodPicker;
+window.selectFood = selectFood;
+
+// Diet: Quick Add + Meals
+window.openQuickAdd = openQuickAdd;
+window.closeQuickAdd = closeQuickAdd;
+window.switchQuickAddTab = switchQuickAddTab;
+window.toggleFavoriteFood = toggleFavoriteFood;
+window.toggleFavoriteMeal = toggleFavoriteMeal;
+window.quickAddFood = quickAddFood;
+window.quickAddMeal = quickAddMeal;
+window.toggleQuickAdjust = toggleQuickAdjust;
+
+window.openMealBuilder = openMealBuilder;
+window.closeMealBuilder = closeMealBuilder;
+window.addFoodToMealDraft = addFoodToMealDraft;
+window.removeMealItem = removeMealItem;
+window.changeMealItemQty = changeMealItemQty;
+window.changeMealItemUnit = changeMealItemUnit;
