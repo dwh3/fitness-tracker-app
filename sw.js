@@ -1,5 +1,5 @@
 // sw.js - Updated with better cache management
-const CACHE_VERSION = 'v8'; // Increment this with each deployment
+const CACHE_VERSION = 'v19'; // Increment this with each deployment
 const CACHE_NAME = `fittrack-${CACHE_VERSION}`;
 const urlsToCache = [
   '/',

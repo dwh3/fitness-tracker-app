@@ -151,16 +151,7 @@
             <div id="templatesList"></div>
           </div>
 
-          <!-- Today's Session -->
-          <div class="section-card">
-            <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
-              <span>Today's Session</span>
-              <button class="btn-text" onclick="showExerciseModal()">
-                <i class="bi bi-plus-circle"></i> Add exercise
-              </button>
-            </div>
-            <div id="sessionList"></div>
-          </div>
+          <!-- (Removed) Today's Session -->
         </div>
 
         <!-- Progress subtab -->
@@ -313,23 +304,6 @@
     </div>
   </div>
 
-  <!-- Exercise Picker Modal -->
-  <div class="modal-overlay" id="exerciseModal" onclick="closeModal(event)">
-    <div class="modal-sheet">
-      <div class="modal-header">
-        <h3>Add Exercise</h3>
-        <button class="btn-close" onclick="closeExerciseModal()">×</button>
-      </div>
-      <div class="modal-body">
-        <div class="search-container">
-          <i class="bi bi-search search-icon"></i>
-          <input type="search" class="search-input" placeholder="Search exercises..." id="exerciseSearch" />
-        </div>
-        <div id="exerciseList" class="workouts-list"></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Template Builder Modal -->
   <div class="modal-overlay" id="templateModal" onclick="closeModal(event)">
     <div class="modal-sheet">
@@ -354,8 +328,18 @@
               <i class="bi bi-search search-icon"></i>
               <input type="search" class="search-input" id="templateExerciseSearch" placeholder="Search exercises..." />
             </div>
+
+            <!-- NEW: subtle hint; JS will show/hide this -->
+            <div id="templateExerciseHint" class="muted" style="display:none; margin:6px 0 0 4px;">
+              Type at least 2 letters to search…
+            </div>
+
             <div id="templateExerciseResults" class="workouts-list"></div>
           </div>
+
+          <button type="button" id="templateExerciseSearchBtn" class="btn-secondary-full" style="margin-top:8px;">
+            <i class="bi bi-search"></i> Search
+          </button>
 
           <div class="form-group">
             <label>Selected Exercises</label>
@@ -382,6 +366,41 @@
           <button type="button" class="btn-danger-full" onclick="discardActiveWorkout()">Discard Active Workout</button>
           <button type="button" class="btn-primary-full" onclick="finishActiveWorkout()">Finish Workout</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Exercise Picker Modal -->
+  <div class="modal-overlay" id="activeExerciseModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 id="activeExerciseModalTitle">Pick Exercise</h3>
+        <button class="btn-close" type="button" onclick="closeActiveExerciseModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="search-container">
+          <i class="bi bi-search search-icon"></i>
+          <input type="search" class="search-input" id="activeExerciseSearch" placeholder="Search exercises..." />
+        </div>
+        <div id="activeExerciseList" class="workouts-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scope Modal: apply change to session or template -->
+  <div class="modal-overlay" id="scopeModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 id="scopeTitle">Apply Change</h3>
+        <button class="btn-close" type="button" onclick="closeScopeModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="scopeDesc" class="activity-time" style="margin-bottom:12px;"></p>
+        <button class="btn-primary-full" id="scopeSessionBtn">This Session Only</button>
+        <button class="btn-secondary-full" id="scopeTemplateBtn" style="margin-top:10px;">Update Template</button>
+        <p id="scopeNoTemplateHint" class="activity-time" style="display:none;margin-top:10px;">
+          This workout wasn’t started from a template, so only session changes are available.
+        </p>
       </div>
     </div>
   </div>
@@ -620,6 +639,28 @@
           </div>
           <button type="submit" class="btn-primary-full">Log Weight</button>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW: Workout Complete Modal (auto-prompt) -->
+  <div class="modal-overlay" id="workoutCompleteModal" onclick="closeModal(event)">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3>Great work! 🎉</h3>
+        <button class="btn-close" onclick="closeWorkoutCompleteModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="activity-time" style="margin-bottom:12px;">
+          You’ve completed all planned sets. Do you want to finish this workout or add more exercises?
+        </p>
+        <button class="btn-primary-full" onclick="finishActiveWorkout()">
+          <i class="bi bi-check2-circle"></i> Finish Workout
+        </button>
+        <button class="btn-secondary-full" style="margin-top:10px;" onclick="handleAddMoreFromComplete()">
+          <i class="bi bi-plus-circle"></i> Add Exercises
+        </button>
+        <button class="btn-text" style="margin-top:10px;" onclick="closeWorkoutCompleteModal()">Keep working</button>
       </div>
     </div>
   </div>

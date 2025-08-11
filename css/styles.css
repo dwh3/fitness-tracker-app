@@ -440,3 +440,33 @@ body {
 .update-btn:active {
   transform: scale(0.98);
 }
+
+
+/* Add this to the end of your styles.css file */
+
+/* Template search improvements */
+.opacity-50 {
+  opacity: 0.5;
+}
+
+.workout-card[disabled] {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* Better search results spacing */
+#templateExerciseResults .workout-card {
+  margin-bottom: 8px;
+}
+
+#templateExerciseResults .workout-card:last-child {
+  margin-bottom: 0;
+}
+
+/* Search hint styling */
+#templateExerciseHint {
+  font-size: 13px;
+  color: var(--gray-500);
+  font-style: italic;
+  padding: 8px 0;
+}

@@ -1,9 +1,7 @@
 // app.js
 
-// Add this to the top of your app.js file
-
 // Version management
-const APP_VERSION = '1.0.8'; // Increment this with each deployment
+const APP_VERSION = '1.0.18'; // Increment this with each deployment
 
 // Check for updates
 async function checkForUpdates() {
@@ -45,7 +43,7 @@ function showUpdateNotification() {
 // Force update
 function updateApp() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+    navigator.serviceWorker.controller?.postMessage({ type: 'SKIP_WAITING' });
     window.location.reload(true); // Force reload from server
   }
 }
@@ -105,6 +103,83 @@ const exerciseLibrary = [
   { id: 901, name: 'Hanging Leg Raise',    muscleGroup: 'abs',       type: 'accessory' }
 ];
 
+/* ---------- Starter Templates (Push / Pull / Legs) ---------- */
+/* We seed once per profile (idempotent). Uses the library above so types/groups stay aligned. */
+function buildTplItem(exerciseId, sets = 3, restMode = 'auto') {
+  const ex = exerciseLibrary.find(e => e.id === exerciseId);
+  if (!ex) return null;
+  return {
+    exerciseId: ex.id,
+    name: ex.name,
+    muscleGroup: ex.muscleGroup,
+    sets,
+    type: ex.type || 'accessory',
+    restMode,
+    restSec: null
+  };
+}
+function getStarterTemplates() {
+  // Push — Chest/Shoulders/Triceps
+  const pushItems = [
+    buildTplItem(101, 4), // Barbell Bench Press
+    buildTplItem(102, 3), // Incline DB Press
+    buildTplItem(501, 3), // DB Shoulder Press
+    buildTplItem(502, 3), // Lateral Raise
+    buildTplItem(701, 3)  // Triceps Pushdown
+  ].filter(Boolean);
+
+  // Pull — Back/Biceps/Core
+  const pullItems = [
+    buildTplItem(201, 4), // Bent‑Over Row
+    buildTplItem(202, 3), // Lat Pulldown
+    buildTplItem(601, 3), // Barbell Curl
+    buildTplItem(901, 3)  // Hanging Leg Raise
+  ].filter(Boolean);
+
+  // Legs — Quads/Glutes/Hams/Calves
+  const legsItems = [
+    buildTplItem(301, 4), // Back Squat
+    buildTplItem(401, 3), // Romanian Deadlift
+    buildTplItem(302, 3), // Leg Press
+    buildTplItem(402, 3), // Hip Thrust
+    buildTplItem(801, 4)  // Standing Calf Raise
+  ].filter(Boolean);
+
+  return [
+    { id: 'builtin_push', name: 'Push — Starter', notes: 'Chest / Shoulders / Triceps', items: pushItems, builtIn: true },
+    { id: 'builtin_pull', name: 'Pull — Starter', notes: 'Back / Biceps / Core',       items: pullItems, builtIn: true },
+    { id: 'builtin_legs', name: 'Legs — Starter', notes: 'Quads / Glutes / Hamstrings / Calves', items: legsItems, builtIn: true }
+  ];
+}
+function seedDefaultTemplatesIfNeeded() {
+  try {
+    if (!currentProfile) return;
+    const flagKey = `fittrack_seeded_templates_v1_${currentProfile.id}`;
+    if (localStorage.getItem(flagKey) === '1') return; // already seeded for this profile
+
+    const starters = getStarterTemplates();
+    const existing = new Set((appState.templates || []).map(t => t.id));
+    let changed = false;
+
+    starters.forEach(t => {
+      if (!existing.has(t.id)) {
+        appState.templates.push(t);
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      persistState();
+    }
+    // mark seeded even if nothing added (prevents re-seed spam if user deleted them on purpose)
+    localStorage.setItem(flagKey, '1');
+  } catch (e) {
+    // fail-safe: never block app load
+    console.warn('Template seeding skipped:', e);
+  }
+}
+
+/* ---------- Helpers ---------- */
 function todayISO() { return new Date().toISOString().split('T')[0]; }
 function prettyGroup(k) { return k.replace(/_/g, ' ').replace(/\b\w/g, s => s.toUpperCase()); }
 function clamp(val, min, max) { return Math.min(max, Math.max(min, val)); }
@@ -122,6 +197,9 @@ let setsChart = null;
 
 // Template draft used while building/editing
 let templateDraft = null;
+
+// NEW: Template swap mode (index of the item being replaced)
+let templateSwapIndex = null;
 
 // Diet: meal builder draft
 let mealDraft = null;
@@ -148,7 +226,6 @@ let appState = {
 
   // Exercise
   setsLog: [],                   // [{date ISO, exerciseId, exerciseName, muscleGroup, weight, reps, rir}]
-  currentSession: { date: new Date().toISOString(), items: [] }, // for manual "Today's Session"
 
   // Templates
   templates: [],                 // [{id,name,notes,items:[{exerciseId,name,muscleGroup,sets,type,restMode,restSec}]}]
@@ -156,6 +233,11 @@ let appState = {
   // Active workout (live) – persisted
   activeWorkout: null
 };
+
+// --- Active Workout: live edit state (NEW) ---
+let activeModifyMode = null;       // 'add' | 'replace'
+let activeReplaceIndex = null;     // which AW item index to replace (defaults to current)
+let pendingActiveChange = null;    // { mode, exercise, replaceIndex }
 
 /* ---------- Init ---------- */
 document.addEventListener('DOMContentLoaded', () => {
@@ -181,7 +263,6 @@ document.addEventListener('DOMContentLoaded', () => {
     templates: currentProfile.data?.templates ?? [],
     meals: currentProfile.data?.meals ?? [],
     favorites: currentProfile.data?.favorites ?? { foods: [], meals: [] },
-    currentSession: { date: new Date().toISOString(), items: [] },
     activeWorkout: currentProfile.data?.activeWorkout ?? null
   };
 
@@ -204,21 +285,36 @@ document.addEventListener('DOMContentLoaded', () => {
   const mbd = document.getElementById('mealBuilderDate');
   if (mbd) mbd.value = todayISO();
 
+  // LISTENERS FIRST: bind early so later errors (e.g., charts) can't break search
+  setupEventListeners();
+
+  // NEW: Seed starter templates (PPL) once per profile before we render the list
+  seedDefaultTemplatesIfNeeded();
+
   // UI
   updateHome();
-  renderSession();
   renderTemplatesList();
   updateExerciseProgress();
   updateDietPanels();
   renderActiveWorkoutBanner();
 
-  // Charts
-  initWeightChart();
-  updateWeightChart();
-  updateSetsChart();
-
-  // Listeners
-  setupEventListeners();
+  // Charts — guard if Chart.js isn't available
+  if (typeof window.Chart === 'function') {
+    initWeightChart();
+    updateWeightChart();
+    updateSetsChart();
+  } else {
+    try {
+      // Some environments load Chart via namespace
+      if (window.Chart) {
+        initWeightChart();
+        updateWeightChart();
+        updateSetsChart();
+      }
+    } catch (e) {
+      console.warn('Chart.js not available — skipping charts init');
+    }
+  }
 
   // PWA
   if ('serviceWorker' in navigator) {
@@ -240,27 +336,71 @@ function setupEventListeners() {
   const df = document.getElementById('dietForm');
   if (df) df.addEventListener('submit', handleDietLog);
 
-  // Template form
+  // Template form (robust Enter handling: if Enter is pressed inside the search box,
+  // do NOT submit the form — run a full search instead)
   const tf = document.getElementById('templateForm');
-  if (tf) tf.addEventListener('submit', handleTemplateSave);
+  if (tf) {
+    tf.addEventListener('submit', (e) => {
+      const active = document.activeElement;
+      if (active && active.id === 'templateExerciseSearch') {
+        e.preventDefault();
+        const val = active.value || '';
+        // Force the comprehensive results list
+        renderTemplateExerciseResults(val, { forceFull: true });
+        return;
+      }
+      // Normal path: actually save the template
+      handleTemplateSave(e);
+    });
+  }
 
   // Enable / disable template Save
   const nameInput = document.getElementById('templateName');
   if (nameInput) nameInput.addEventListener('input', updateTemplateSaveButtonState);
 
-  // Template exercise search
+  // Template exercise search (suggestions after 2+ chars; full list on Enter / Search)
   const templateSearch = document.getElementById('templateExerciseSearch');
   if (templateSearch) {
+    let tmr = null;
+
+    // Live suggestions as you type (debounced a bit)
     templateSearch.addEventListener('input', function () {
-      renderTemplateExerciseResults(this.value.toLowerCase());
+      const val = this.value;
+      clearTimeout(tmr);
+      tmr = setTimeout(() => renderTemplateExerciseResults(val), 120);
+    });
+
+    // Hitting Enter shows a larger result set instead of submitting the form
+    templateSearch.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault(); // don't submit the template form
+        renderTemplateExerciseResults(this.value, { forceFull: true });
+      }
+    });
+
+    // iOS/Safari-specific: <input type="search"> fires a 'search' event on Enter/clear
+    templateSearch.addEventListener('search', function () {
+      // Treat it like an explicit search (force full list)
+      renderTemplateExerciseResults(this.value, { forceFull: true });
     });
   }
 
-  // Exercise search
-  const exerciseSearch = document.getElementById('exerciseSearch');
-  if (exerciseSearch) {
-    exerciseSearch.addEventListener('input', function () {
-      renderExerciseList(this.value.toLowerCase());
+  // Search button (force full results)
+  const templateSearchBtn = document.getElementById('templateExerciseSearchBtn');
+  if (templateSearchBtn) {
+    templateSearchBtn.addEventListener('click', function () {
+      const val = document.getElementById('templateExerciseSearch')?.value || '';
+      renderTemplateExerciseResults(val, { forceFull: true });
+    });
+  }
+
+  // (Removed) Exercise search for manual Today's Session
+
+  // Active Workout — live edit picker search (NEW)
+  const aes = document.getElementById('activeExerciseSearch');
+  if (aes) {
+    aes.addEventListener('input', function () {
+      renderActiveExerciseList(this.value.toLowerCase());
     });
   }
 
@@ -286,7 +426,7 @@ function setupEventListeners() {
   const saveAndAddMealBtn = document.getElementById('saveAndAddMealBtn');
   if (saveAndAddMealBtn) saveAndAddMealBtn.addEventListener('click', saveAndAddMeal);
   
-  // Escape closes Template or Active Workout modal (if open)
+  // Escape closes various modals
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       const tm = document.getElementById('templateModal');
@@ -297,6 +437,14 @@ function setupEventListeners() {
       if (qam && qam.classList.contains('show')) closeQuickAdd();
       const mbm = document.getElementById('mealBuilderModal');
       if (mbm && mbm.classList.contains('show')) closeMealBuilder();
+      // NEW: close Active Exercise picker and Scope sheet
+      const aem = document.getElementById('activeExerciseModal');
+      if (aem && aem.classList.contains('show')) closeActiveExerciseModal();
+      const sm = document.getElementById('scopeModal');
+      if (sm && sm.classList.contains('show')) closeScopeModal();
+      // NEW: close completion prompt
+      const wcm = document.getElementById('workoutCompleteModal');
+      if (wcm && wcm.classList.contains('show')) closeWorkoutCompleteModal();
     }
     if (e.key === 'Enter' && document.getElementById('activeWorkoutModal')?.classList.contains('show')) {
       logActiveSet();
@@ -400,94 +548,6 @@ function updateHome() {
   }
 }
 
-/* ---------- Exercise: session logging (manual) ---------- */
-function showExerciseModal() {
-  const search = document.getElementById('exerciseSearch');
-  if (search) search.value = '';
-  renderExerciseList('');
-  document.getElementById('exerciseModal')?.classList.add('show');
-}
-function renderExerciseList(q = '') {
-  const list = document.getElementById('exerciseList');
-  if (!list) return;
-  const filtered = exerciseLibrary.filter(e =>
-    e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q)
-  );
-  list.innerHTML = filtered.map(ex => `
-    <div class="workout-card" onclick="addExerciseToSession(${ex.id})">
-      <div class="workout-header">
-        <div class="workout-title">${ex.name}</div>
-        <span class="workout-badge" style="background:var(--info);color:white;text-transform:capitalize;">${prettyGroup(ex.muscleGroup)}</span>
-      </div>
-    </div>`).join('');
-}
-function closeExerciseModal() { document.getElementById('exerciseModal')?.classList.remove('show'); }
-
-function addExerciseToSession(id) {
-  const ex = exerciseLibrary.find(e => e.id === id);
-  if (!ex) return;
-  const s = appState.currentSession;
-  if (!s.items.some(i => i.exerciseId === id)) {
-    s.items.push({ exerciseId: id, name: ex.name, muscleGroup: ex.muscleGroup, sets: [] });
-    persistState();
-  }
-  renderSession();
-  closeExerciseModal();
-}
-function addSet(exerciseId) {
-  const weight = parseFloat(prompt('Weight (lbs):', '100')) || 0;
-  const reps = parseInt(prompt('Reps:', '10'), 10) || 0;
-  const rir = parseInt(prompt('RIR (reps in reserve):', '2'), 10);
-  const item = appState.currentSession.items.find(i => i.exerciseId === exerciseId);
-  if (!item) return;
-
-  const setObj = { weight, reps, rir, ts: new Date().toISOString() };
-  item.sets.push(setObj);
-  appState.setsLog.push({
-    date: new Date().toISOString(),
-    exerciseId,
-    exerciseName: item.name,
-    muscleGroup: item.muscleGroup,
-    weight, reps, rir
-  });
-  persistState();
-  renderSession();
-  updateHome();
-  updateExerciseProgress();
-  updateSetsChart();
-}
-function renderSession() {
-  const list = document.getElementById('sessionList');
-  if (!list) return;
-
-  const s = appState.currentSession;
-  if (!s.items.length) {
-    list.innerHTML = '<p style="color:var(--gray-500);text-align:center;">No exercises added yet.</p>';
-    return;
-  }
-
-  list.innerHTML = s.items.map(item => {
-    const setsHtml = item.sets.map((st, i) =>
-      `<div class="activity-item">
-        <div class="activity-details">
-          <div class="activity-name">Set ${i + 1} • ${st.weight} × ${st.reps}</div>
-          <div class="activity-time">${(st.rir ?? '--')} RIR</div>
-        </div>
-      </div>`).join('');
-    return `
-      <div class="workout-card">
-        <div class="workout-header">
-          <div class="workout-title">${item.name} <small style="color:var(--gray-500);text-transform:capitalize;">• ${prettyGroup(item.muscleGroup)}</small></div>
-          <div class="workout-badge" style="background:var(--warning);color:white;">${item.sets.length} sets</div>
-        </div>
-        ${setsHtml || '<div class="activity-time">No sets yet</div>'}
-        <button class="btn-text" type="button" onclick="addSet(${item.exerciseId})">
-          <i class="bi bi-plus-circle"></i> Add set
-        </button>
-      </div>`;
-  }).join('');
-}
-
 /* ---------- Exercise: templates list ---------- */
 function renderTemplatesList() {
   const container = document.getElementById('templatesList');
@@ -506,7 +566,7 @@ function renderTemplatesList() {
           <div class="workout-title">${tpl.name} ${tpl.notes ? `<small style="color:var(--gray-500);">• ${tpl.notes}</small>` : ''}</div>
           <div>
             <button class="icon-btn" type="button" title="Start Live" onclick="startLiveFromTemplate('${tpl.id}')"><i class="bi bi-stopwatch"></i></button>
-            <button class="icon-btn" type="button" title="Use template" onclick="useTemplate('${tpl.id}')"><i class="bi bi-play-circle"></i></button>
+            <!-- Removed: 'Use template' (manual Today's Session) -->
             <button class="icon-btn" type="button" title="Edit" onclick="editTemplate('${tpl.id}')"><i class="bi bi-pencil"></i></button>
             <button class="icon-btn" type="button" title="Duplicate" onclick="duplicateTemplate('${tpl.id}')"><i class="bi bi-files"></i></button>
             <button class="icon-btn" type="button" title="Delete" onclick="deleteTemplate('${tpl.id}')"><i class="bi bi-trash"></i></button>
@@ -534,11 +594,14 @@ function showTemplateModal(id) {
     if (title) title.textContent = 'New Template';
   }
 
+  // reset swap state when opening
+  templateSwapIndex = null;
+
   if (nameInput) nameInput.value = templateDraft.name || '';
   if (notesInput) notesInput.value = templateDraft.notes || '';
 
   if (search) search.value = '';
-  renderTemplateExerciseResults('');
+  renderTemplateExerciseResults('', { forceFull: false });
   renderTemplateDraftItems();
 
   document.getElementById('templateModal')?.classList.add('show');
@@ -546,25 +609,222 @@ function showTemplateModal(id) {
 
   updateTemplateSaveButtonState();
 }
-function renderTemplateExerciseResults(q = '') {
+
+// Improved search: suggestions (>=2 chars), full list on Enter/Search (or even with 0–1 chars)
+function renderTemplateExerciseResults(q = '', opts = {}) {
   const results = document.getElementById('templateExerciseResults');
+  const hint = document.getElementById('templateExerciseHint');
   if (!results) return;
-  const filtered = exerciseLibrary.filter(e =>
-    e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q)
-  ).slice(0, 10);
-  results.innerHTML = filtered.map(ex => `
-    <div class="workout-card">
-      <div class="workout-header">
-        <div class="workout-title">${ex.name}</div>
-        <button class="btn-text" type="button" onclick="addExerciseToDraft(${ex.id})"><i class="bi bi-plus-circle"></i> Add</button>
-      </div>
-      <div class="activity-time" style="text-transform:capitalize;">${prettyGroup(ex.muscleGroup)}</div>
-    </div>`).join('');
+
+  const queryRaw = (q || '').trim();
+  const query = queryRaw.toLowerCase();
+  const minChars = 2;
+  const forceFull = !!opts.forceFull;
+
+  const swapping = (templateSwapIndex !== null);
+
+  // Prepare container
+  results.innerHTML = '';
+
+  // If swapping, show a banner at the top regardless of query length
+  if (swapping && templateDraft?.items?.[templateSwapIndex]) {
+    const tgt = templateDraft.items[templateSwapIndex];
+    results.innerHTML += `
+      <div class="workout-card" style="background: var(--gray-50); border: 1px dashed var(--gray-300);">
+        <div class="workout-header">
+          <div class="workout-title">Replacing: ${escapeHtml(tgt.name)}</div>
+          <button class="btn-text" type="button" onclick="cancelSwapTemplateItem()">
+            <i class="bi bi-x-circle"></i> Cancel
+          </button>
+        </div>
+        <div class="activity-time">Pick a replacement below. Sets/rest will be preserved.</div>
+      </div>`;
+  }
+
+  // If we don't have enough characters AND we're not forcing a full list,
+  // show the hint. If swapping, keep the banner visible.
+  if (query.length < minChars && !forceFull) {
+    if (hint) {
+      hint.style.display = 'block';
+      hint.textContent = `Type at least ${minChars} letters to search…`;
+    }
+    results.style.display = 'block';
+    // If not swapping, hide the empty container
+    if (!swapping) {
+      results.style.display = 'none';
+      results.innerHTML = '';
+    }
+    return;
+  }
+
+  if (hint) hint.style.display = 'none';
+  results.style.display = 'block';
+
+  // Helpers
+  const normalize = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const tokens = query.split(/\s+/).filter(Boolean);
+  const queryNorm = normalize(query);
+
+  let list = [];
+  let usedFallback = false;
+
+  if (forceFull && query.length < minChars) {
+    // Show the whole library when user hits Enter / clicks Search with 0–1 chars.
+    list = exerciseLibrary.slice();
+  } else {
+    // First pass: friendly exact-ish matching
+    const filtered = exerciseLibrary.filter(e => {
+      const name = e.name.toLowerCase();
+      const group = (e.muscleGroup || '').toLowerCase();
+      return (
+        name.includes(query) ||
+        tokens.every(t => name.includes(t)) ||
+        group.includes(query)
+      );
+    });
+
+    list = filtered;
+
+    // Fallback: fuzzy suggestions (aliases + letters-in-order similarity)
+    if (!list.length) {
+      usedFallback = true;
+
+      const ALIASES = {
+        bench: ['bench press', 'barbell bench', 'dumbbell bench', 'db press', 'press'],
+        chest: ['pec', 'pecs'],
+        back: ['lat', 'lats', 'row', 'rows'],
+        shoulders: ['delts', 'shoulder', 'ohp', 'overhead press', 'press'],
+        biceps: ['curl', 'curls'],
+        triceps: ['pushdown', 'extension', 'extensions'],
+        legs: ['quads', 'hamstrings', 'hams', 'glutes', 'calves', 'leg'],
+        abs: ['core', 'ab', 'abdominals'],
+        row: ['bent over row', 'row'],
+        deadlift: ['romanian deadlift', 'rdl', 'deadlift'],
+        squat: ['back squat', 'squats'],
+        press: ['bench press', 'shoulder press', 'db press', 'ohp']
+      };
+
+      const hasAliasMatch = (q, exName) => {
+        const key = normalize(q);
+        if (!ALIASES[key]) return false;
+        const nm = normalize(exName);
+        return ALIASES[key].some(term => nm.includes(normalize(term)));
+      };
+
+      const inOrderScore = (needle, hay) => {
+        let i = 0, j = 0, s = 0;
+        while (i < needle.length && j < hay.length) { if (needle[i] === hay[j]) { s++; i++; } j++; }
+        return s;
+      };
+
+      const scored = exerciseLibrary.map(ex => {
+        const name = ex.name.toLowerCase();
+        const nameN = normalize(ex.name);
+        const groupN = normalize(ex.muscleGroup);
+        let score = 0;
+        if (name.includes(query)) score += 8;
+        if (groupN.includes(queryNorm)) score += 4;
+        if (tokens.some(t => name.includes(t))) score += 3;
+        if (nameN.startsWith(queryNorm)) score += 2;
+        if (hasAliasMatch(query, ex.name)) score += 5;
+        score += Math.min(inOrderScore(queryNorm, nameN), queryNorm.length) * 0.5; // small boost
+        return { ex, score };
+      })
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(s => s.ex);
+
+      // last resort if absolutely nothing scores: show the library itself
+      list = scored.length ? scored : exerciseLibrary.slice();
+    }
+  }
+
+  const limit = forceFull ? 50 : 8;
+  const slice = list.slice(0, limit);
+
+  // If we used fallback, show a friendly banner (append after swap banner if present)
+  if (usedFallback) {
+    results.innerHTML += `
+      <div class="workout-card" style="background: var(--gray-50); border: 1px dashed var(--gray-300);">
+        <div class="workout-header">
+          <div class="workout-title" style="color: var(--gray-600);">
+            No exact matches for "${escapeHtml(queryRaw)}" — showing closest matches
+          </div>
+          <button class="btn-text" type="button"
+                  onclick="renderTemplateExerciseResults(document.getElementById('templateExerciseSearch')?.value || '', {forceFull: true})">
+            <i class="bi bi-eye"></i> Show all
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // Render results
+  slice.forEach(ex => {
+    const alreadyInDraft = templateDraft && templateDraft.items.some(i => i.exerciseId === ex.id);
+    const isSameAsTarget = swapping && templateDraft?.items?.[templateSwapIndex]?.exerciseId === ex.id;
+
+    let ctaHtml = '';
+    if (swapping) {
+      // Disable if same as current or would create duplicate elsewhere
+      const disabled = isSameAsTarget || (alreadyInDraft && !isSameAsTarget);
+      const label = isSameAsTarget ? 'Current' : (disabled ? 'In template' : 'Replace');
+      ctaHtml = `<button class="btn-text" type="button"
+                   onclick="${disabled ? '' : `swapExerciseInDraft(${ex.id})`}"
+                   ${disabled ? 'disabled style="opacity:0.5;"' : ''}>
+                   <i class="bi bi-arrow-left-right"></i> ${label}
+                 </button>`;
+    } else {
+      const disabled = alreadyInDraft;
+      ctaHtml = `<button class="btn-text" type="button"
+                   onclick="${disabled ? '' : `addExerciseToDraft(${ex.id})`}"
+                   ${disabled ? 'disabled style="opacity:0.5;"' : ''}>
+                   <i class="bi bi-plus-circle"></i> ${disabled ? 'Added' : 'Add'}
+                 </button>`;
+    }
+
+    results.innerHTML += `
+      <div class="workout-card ${((alreadyInDraft && !isSameAsTarget) || isSameAsTarget) ? 'opacity-50' : ''}">
+        <div class="workout-header">
+          <div class="workout-title">${escapeHtml(ex.name)}
+            ${isSameAsTarget ? '<small style="color: var(--warning);"> (Current)</small>' : ''}
+            ${(!isSameAsTarget && alreadyInDraft && swapping) ? '<small style="color: var(--warning);"> (In template)</small>' : ''}
+          </div>
+          ${ctaHtml}
+        </div>
+        <div class="activity-time" style="text-transform:capitalize;">
+          ${prettyGroup(ex.muscleGroup)} • ${ex.type || 'exercise'}
+        </div>
+      </div>`;
+  });
+
+  // "Show all" if there are more
+  if (list.length > limit && !forceFull) {
+    results.innerHTML += `
+      <div class="workout-card" style="background: var(--gray-50); border: 1px dashed var(--gray-300);">
+        <div class="workout-header">
+          <div class="workout-title" style="color: var(--gray-600);">
+            ${list.length - limit} more exercises available
+          </div>
+          <button class="btn-text" type="button"
+                  onclick="renderTemplateExerciseResults(document.getElementById('templateExerciseSearch')?.value || '', {forceFull: true})">
+            <i class="bi bi-eye"></i> Show all
+          </button>
+        </div>
+        <div class="activity-time">Press Enter or click "Show all" to see more results</div>
+      </div>`;
+  }
 }
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
 function closeTemplateModal() {
   document.getElementById('templateModal')?.classList.remove('show');
   templateDraft = null;
+  templateSwapIndex = null; // reset swap state on close
 }
+
 function renderTemplateDraftItems() {
   const itemsContainer = document.getElementById('templateItems');
   if (!itemsContainer) return;
@@ -581,6 +841,7 @@ function renderTemplateDraftItems() {
         <div>
           <button class="icon-btn" type="button" title="Move up" onclick="moveTemplateItem(${idx}, -1)"><i class="bi bi-arrow-up"></i></button>
           <button class="icon-btn" type="button" title="Move down" onclick="moveTemplateItem(${idx}, 1)"><i class="bi bi-arrow-down"></i></button>
+          <button class="icon-btn" type="button" title="Swap" onclick="startSwapTemplateItem(${idx})"><i class="bi bi-arrow-left-right"></i></button>
           <button class="icon-btn" type="button" title="Remove" onclick="removeTemplateItem(${idx})"><i class="bi bi-trash"></i></button>
         </div>
       </div>
@@ -607,24 +868,93 @@ function renderTemplateDraftItems() {
     </div>
   `).join('');
 }
+
+// Add exercise to template draft
 function addExerciseToDraft(id) {
   if (!templateDraft) return;
+  
   const ex = exerciseLibrary.find(e => e.id === id);
   if (!ex) return;
-  if (!templateDraft.items.some(i => i.exerciseId === id)) {
-    templateDraft.items.push({
-      exerciseId: id,
-      name: ex.name,
-      muscleGroup: ex.muscleGroup,
-      sets: 3,
-      type: ex.type || 'accessory',
-      restMode: 'auto', // 'auto' or 'custom'
-      restSec: null
-    });
+  
+  // Check if already added
+  if (templateDraft.items.some(i => i.exerciseId === id)) {
+    showToast('Exercise already added to template');
+    return;
   }
+  
+  // Add the exercise
+  templateDraft.items.push({
+    exerciseId: id,
+    name: ex.name,
+    muscleGroup: ex.muscleGroup,
+    sets: 3,
+    type: ex.type || 'accessory',
+    restMode: 'auto',
+    restSec: null
+  });
+  
+  // Refresh the displays
   renderTemplateDraftItems();
   updateTemplateSaveButtonState();
+  
+  // Refresh search results to show "already added" state
+  const searchInput = document.getElementById('templateExerciseSearch');
+  if (searchInput) {
+    renderTemplateExerciseResults(searchInput.value);
+  }
+  
+  // Show success message
+  showToast(`Added ${ex.name} to template`);
 }
+
+/* --- NEW: Swap/Replace support for template items --- */
+function startSwapTemplateItem(index) {
+  if (!templateDraft) return;
+  templateSwapIndex = index;
+  const si = document.getElementById('templateExerciseSearch');
+  if (si) si.focus();
+  // Show a full list immediately for quick replacement
+  renderTemplateExerciseResults(si ? si.value : '', { forceFull: true });
+  showToast(`Select a replacement for ${templateDraft.items[index].name}`);
+}
+function cancelSwapTemplateItem() {
+  templateSwapIndex = null;
+  const si = document.getElementById('templateExerciseSearch');
+  renderTemplateExerciseResults(si ? si.value : '');
+  showToast('Swap canceled');
+}
+function swapExerciseInDraft(newId) {
+  if (!templateDraft || templateSwapIndex === null) return;
+  const target = templateDraft.items[templateSwapIndex];
+  if (!target) { templateSwapIndex = null; return; }
+
+  // Prevent duplicates (except replacing itself)
+  if (templateDraft.items.some((it, i) => it.exerciseId === newId && i !== templateSwapIndex)) {
+    showToast('That exercise is already in this template');
+    return;
+  }
+
+  const ex = exerciseLibrary.find(e => e.id === newId);
+  if (!ex) return;
+
+  const oldName = target.name;
+
+  // Replace in place; preserve sets & rest preferences
+  target.exerciseId = ex.id;
+  target.name = ex.name;
+  target.muscleGroup = ex.muscleGroup;
+  // Preserve existing type if set, otherwise adopt library type
+  target.type = target.type || ex.type || 'accessory';
+
+  templateSwapIndex = null;
+  renderTemplateDraftItems();
+  const si = document.getElementById('templateExerciseSearch');
+  renderTemplateExerciseResults(si ? si.value : '');
+  updateTemplateSaveButtonState();
+  showToast(`Replaced ${oldName} → ${ex.name}`);
+}
+/* --- end Swap/Replace --- */
+
 function moveTemplateItem(index, dir) {
   if (!templateDraft) return;
   const newIndex = index + dir;
@@ -716,24 +1046,6 @@ function deleteTemplate(id) {
   renderTemplatesList();
   showToast('Template deleted');
 }
-function useTemplate(id) {
-  const tpl = appState.templates.find(t => t.id === id);
-  if (!tpl) return;
-  appState.currentSession = { date: new Date().toISOString(), items: [] };
-  tpl.items.forEach(it => {
-    appState.currentSession.items.push({
-      exerciseId: it.exerciseId,
-      name: it.name,
-      muscleGroup: it.muscleGroup,
-      sets: []
-    });
-  });
-  persistState();
-  renderSession();
-  showToast(`Loaded "${tpl.name}"`);
-  navigateTo('exercise');
-  switchSubtab('exercise', 'log', document.querySelector('#exerciseSubtabs .subtab-btn'));
-}
 
 /* ---------- Active Workout (Live) ---------- */
 let restIntervalId = null;
@@ -775,8 +1087,8 @@ function startLiveFromTemplate(id) {
     return;
   }
 
-  // Prepare items with meta needed for rest logic
-  const items = tpl.items.map(it => ({
+  // Prepare items with meta needed for rest logic + a stable template index (NEW: tplIndex)
+  const items = tpl.items.map((it, i) => ({
     exerciseId: it.exerciseId,
     name: it.name,
     muscleGroup: it.muscleGroup,
@@ -784,7 +1096,8 @@ function startLiveFromTemplate(id) {
     type: it.type || (exerciseLibrary.find(e => e.id === it.exerciseId)?.type ?? 'accessory'),
     restMode: it.restMode || 'auto',
     customRestSec: it.restMode === 'custom' ? (it.restSec || 90) : null,
-    setsCompleted: [] // {weight,reps,rir,ts}
+    setsCompleted: [], // {weight,reps,rir,ts}
+    tplIndex: i
   }));
 
   // Initial rest recommendation for first exercise (before any set)
@@ -798,13 +1111,55 @@ function startLiveFromTemplate(id) {
     endedAt: null,
     currentExerciseIndex: 0,
     rest: { state: 'idle', durationSec: firstRestSec, remainingMs: firstRestSec * 1000, endAt: null },
-    items
+    items,
+    // NEW: flag to avoid re-prompting
+    completionPromptShown: false
   };
 
   persistState();
   openActiveWorkoutModal();
   renderActiveWorkoutBanner();
 }
+
+/* --- NEW: workout completion helpers & prompt --- */
+function isWorkoutFullyCompleted(aw) {
+  if (!aw || !Array.isArray(aw.items) || aw.items.length === 0) return false;
+  return aw.items.every(it => (it.setsCompleted?.length || 0) >= (it.targetSets || 0));
+}
+
+
+/* --- NEW: auto-rotate to next incomplete exercise --- */
+function findNextIncompleteExerciseIndex(aw, fromIndex) {
+  if (!aw || !Array.isArray(aw.items) || aw.items.length === 0) return -1;
+  const n = aw.items.length;
+  const start = Number.isInteger(fromIndex) ? fromIndex : (aw.currentExerciseIndex || 0);
+  for (let offset = 1; offset < n; offset++) {
+    const i = (start + offset) % n;
+    const it = aw.items[i];
+    const done = (it.setsCompleted?.length || 0);
+    const target = (it.targetSets || 0);
+    if (done < target) return i;
+  }
+  return -1;
+}
+function openWorkoutCompleteModal() {
+  document.getElementById('workoutCompleteModal')?.classList.add('show');
+}
+function closeWorkoutCompleteModal() {
+  document.getElementById('workoutCompleteModal')?.classList.remove('show');
+}
+function handleAddMoreFromComplete() {
+  const aw = appState.activeWorkout;
+  if (!aw || aw.endedAt) { closeWorkoutCompleteModal(); return; }
+  // set pointer to last so "add" inserts at end
+  aw.currentExerciseIndex = aw.items.length - 1;
+  // allow prompting again after new work is added
+  aw.completionPromptShown = false;
+  persistState();
+  closeWorkoutCompleteModal();
+  openActiveExercisePicker('add'); // will insert after current index
+}
+/* --- end new completion prompt code --- */
 
 function openActiveWorkoutModal() {
   renderActiveWorkout();
@@ -858,6 +1213,16 @@ function renderActiveWorkout() {
 
       <div class="set-pills">${pills}</div>
 
+      <!-- Live edit actions (NEW) -->
+      <div class="activity-time" style="margin-top:6px;">
+        <button class="btn-text" type="button" onclick="openActiveExercisePicker('replace')">
+          <i class="bi bi-arrow-left-right"></i> Replace this exercise
+        </button>
+        <button class="btn-text" type="button" onclick="openActiveExercisePicker('add')">
+          <i class="bi bi-plus-circle"></i> Add exercise after
+        </button>
+      </div>
+
       <div class="input-row" style="margin-top:10px;">
         <div class="input-mini">
           <label>Weight (lbs)</label>
@@ -874,7 +1239,7 @@ function renderActiveWorkout() {
       </div>
 
       <button class="btn-primary-full" type="button" style="margin-top:10px;" onclick="logActiveSet()">
-        ${done + 1 <= target ? 'Log Set & Start Rest' : 'Log Set'}
+        ${done + 1 < target ? 'Log Set & Start Rest' : 'Log Final Set'}
       </button>
 
       <div class="rest-timer" id="restTimer">
@@ -936,13 +1301,57 @@ function logActiveSet() {
   const reps = parseInt(document.getElementById('awReps')?.value || '', 10);
   const rir = parseInt(document.getElementById('awRir')?.value || '', 10);
 
+  const prevDone = ex.setsCompleted.length;
+  const targetSets = ex.targetSets || 0;
+
   if (!(isFinite(weight) && weight >= 0) || !(Number.isInteger(reps) && reps > 0)) {
     showToast('Enter weight and reps'); return;
   }
 
   ex.setsCompleted.push({ weight, reps, rir: isFinite(rir) ? rir : null, ts: new Date().toISOString() });
 
-  // After logging a set, auto-start rest with recommended duration
+  const justCompletedThisExercise = (prevDone + 1 === targetSets && targetSets > 0);
+
+  // If the entire workout is now complete, prompt to finish or add more.
+  const workoutNowComplete = isWorkoutFullyCompleted(aw);
+  if (workoutNowComplete && !aw.completionPromptShown) {
+    // stop any rest timer & clear
+    aw.rest.state = 'idle';
+    aw.rest.endAt = null;
+    aw.rest.remainingMs = aw.rest.durationSec * 1000;
+    clearActiveTimer();
+    aw.completionPromptShown = true;
+
+    persistState();
+    renderActiveWorkout();        // refresh UI (rest/timer state)
+    renderActiveWorkoutBanner();
+    showToast('All planned sets complete!');
+    openWorkoutCompleteModal();
+    return; // do not start rest
+  }
+
+  // If we just finished the last planned set for this exercise, move to the next incomplete one.
+  if (justCompletedThisExercise) {
+    const nextIdx = findNextIncompleteExerciseIndex(aw, aw.currentExerciseIndex);
+    if (nextIdx !== -1) {
+      aw.currentExerciseIndex = nextIdx;
+      const nextEx = aw.items[nextIdx];
+      // Reset rest based on the next exercise; do not auto-start
+      const nextRestSec = computeRecommendedRestSec(nextEx, null);
+      aw.rest.state = 'idle';
+      aw.rest.durationSec = nextRestSec;
+      aw.rest.remainingMs = nextRestSec * 1000;
+      aw.rest.endAt = null;
+
+      persistState();
+      renderActiveWorkout();
+      renderActiveWorkoutBanner();
+      showToast(`Completed ${ex.name}. Next: ${nextEx.name}`);
+      return; // we've rotated; no auto-rest from the previous exercise
+    }
+  }
+
+  // Otherwise: After logging a set, auto-start rest with recommended duration
   const restSec = computeRecommendedRestSec(ex, { weight, reps, rir });
   aw.rest.state = 'running';
   aw.rest.durationSec = restSec;
@@ -1026,6 +1435,7 @@ function finishActiveWorkout() {
   updateExerciseProgress();
   updateSetsChart();
 
+  closeWorkoutCompleteModal(); // ensure prompt is closed if open
   closeActiveWorkoutModal();
   renderActiveWorkoutBanner();
   showToast('Workout saved!');
@@ -1118,6 +1528,270 @@ function adjustRestTimer(deltaSeconds) {
 }
 function clearActiveTimer() {
   if (restIntervalId) { clearInterval(restIntervalId); restIntervalId = null; }
+}
+
+/* ---------- Active Workout: live add/replace exercises (NEW) ---------- */
+
+// Open the exercise picker for Active Workout
+function openActiveExercisePicker(mode = 'add', index = null) {
+  const aw = appState.activeWorkout;
+  if (!aw || aw.endedAt) return;
+
+  activeModifyMode = (mode === 'replace') ? 'replace' : 'add';
+  activeReplaceIndex = Number.isInteger(index) ? index : aw.currentExerciseIndex;
+
+  // Title
+  const title = document.getElementById('activeExerciseModalTitle');
+  if (title) {
+    title.textContent = activeModifyMode === 'replace'
+      ? 'Replace Exercise'
+      : 'Add Exercise to Active';
+  }
+
+  // Reset search + results
+  const aSearch = document.getElementById('activeExerciseSearch');
+  if (aSearch) aSearch.value = '';
+  renderActiveExerciseList('');
+
+  document.getElementById('activeExerciseModal')?.classList.add('show');
+}
+
+function closeActiveExerciseModal() {
+  document.getElementById('activeExerciseModal')?.classList.remove('show');
+}
+
+// Render the exercise list for the Active Exercise Picker
+function renderActiveExerciseList(q = '') {
+  const list = document.getElementById('activeExerciseList');
+  if (!list) return;
+  const qq = (q || '').toLowerCase();
+  const filtered = exerciseLibrary.filter(e =>
+    e.name.toLowerCase().includes(qq) || (e.muscleGroup || '').toLowerCase().includes(qq)
+  );
+  list.innerHTML = filtered.map(ex => `
+    <div class="workout-card">
+      <div class="workout-header">
+        <div class="workout-title">${ex.name}</div>
+        <button class="btn-text" type="button" onclick="chooseExerciseForActive(${ex.id})">
+          <i class="bi bi-check-circle"></i> Select
+        </button>
+      </div>
+      <div class="activity-time" style="text-transform:capitalize;">
+        ${prettyGroup(ex.muscleGroup)} • ${ex.type || 'exercise'}
+      </div>
+    </div>
+  `).join('');
+}
+
+// After picking an exercise, ask scope (session vs. template)
+function chooseExerciseForActive(exerciseId) {
+  const ex = exerciseLibrary.find(e => e.id === exerciseId);
+  if (!ex) { showToast('Exercise not found'); return; }
+
+  const aw = appState.activeWorkout;
+  if (!aw) return;
+
+  pendingActiveChange = {
+    mode: activeModifyMode || 'add',
+    exercise: ex,
+    replaceIndex: Number.isInteger(activeReplaceIndex) ? activeReplaceIndex : aw.currentExerciseIndex
+  };
+
+  closeActiveExerciseModal();
+  openScopeModal(pendingActiveChange);
+}
+
+// Small sheet: apply change to session or update template
+function openScopeModal(change) {
+  const aw = appState.activeWorkout;
+  const hasTemplate = !!aw?.templateId;
+
+  const desc = document.getElementById('scopeDesc');
+  if (desc) {
+    const action = change.mode === 'replace' ? 'Replace' : 'Add';
+    desc.textContent = `${action} “${change.exercise.name}”. Where do you want this change to apply?`;
+  }
+
+  const tBtn = document.getElementById('scopeTemplateBtn');
+  const hint = document.getElementById('scopeNoTemplateHint');
+
+  if (tBtn) {
+    if (hasTemplate) {
+      tBtn.disabled = false;
+      tBtn.style.opacity = '';
+      if (hint) hint.style.display = 'none';
+    } else {
+      // If no template, disable template update path
+      tBtn.disabled = true;
+      tBtn.style.opacity = '0.5';
+      if (hint) hint.style.display = '';
+    }
+    tBtn.onclick = () => {
+      closeScopeModal();
+      applyActiveChangeTemplate(change);
+    };
+  }
+
+  const sBtn = document.getElementById('scopeSessionBtn');
+  if (sBtn) {
+    sBtn.onclick = () => {
+      closeScopeModal();
+      applyActiveChangeSession(change);
+    };
+  }
+
+  document.getElementById('scopeModal')?.classList.add('show');
+}
+
+function closeScopeModal() {
+  document.getElementById('scopeModal')?.classList.remove('show');
+}
+
+// Apply change only in the current Active Workout
+function applyActiveChangeSession(change) {
+  const aw = appState.activeWorkout;
+  if (!aw || aw.endedAt) return;
+
+  const idx = clamp(change.replaceIndex ?? aw.currentExerciseIndex, 0, aw.items.length - 1);
+  const ex = change.exercise;
+
+  if (change.mode === 'replace') {
+    const prev = aw.items[idx];
+    // Keep target set count if present; reset completed sets
+    const targetSets = prev?.targetSets ?? 3;
+
+    aw.items[idx] = {
+      exerciseId: ex.id,
+      name: ex.name,
+      muscleGroup: ex.muscleGroup,
+      targetSets,
+      type: ex.type || 'accessory',
+      restMode: 'auto',
+      customRestSec: null,
+      setsCompleted: [],
+      // retain tplIndex mapping if we’ll also update template (will remain valid)
+      tplIndex: Number.isInteger(prev?.tplIndex) ? prev.tplIndex : undefined
+    };
+
+    // If we replaced the current exercise, reset rest to that exercise’s default
+    if (idx === aw.currentExerciseIndex) {
+      const restSec = computeRecommendedRestSec(aw.items[idx], null);
+      aw.rest.state = 'idle';
+      aw.rest.durationSec = restSec;
+      aw.rest.remainingMs = restSec * 1000;
+      aw.rest.endAt = null;
+    }
+
+    // Replacing means we’re not fully complete anymore
+    aw.completionPromptShown = false;
+
+    persistState();
+    renderActiveWorkout();
+    renderActiveWorkoutBanner();
+    showToast(`Replaced with ${ex.name}`);
+  } else {
+    // add after the current exercise
+    const insertAt = aw.currentExerciseIndex + 1;
+    const newItem = {
+      exerciseId: ex.id,
+      name: ex.name,
+      muscleGroup: ex.muscleGroup,
+      targetSets: 3,
+      type: ex.type || 'accessory',
+      restMode: 'auto',
+      customRestSec: null,
+      setsCompleted: [],
+      tplIndex: undefined // session-only add has no template row
+    };
+    aw.items.splice(insertAt, 0, newItem);
+
+    // Adding a new exercise means completion state is no longer final
+    aw.completionPromptShown = false;
+
+    persistState();
+    renderActiveWorkout();
+    renderActiveWorkoutBanner();
+    showToast(`Added ${ex.name} to this session`);
+  }
+}
+
+// Apply change AND update underlying template when available.
+function applyActiveChangeTemplate(change) {
+  const aw = appState.activeWorkout;
+  if (!aw || !aw.templateId) { applyActiveChangeSession(change); return; }
+
+  // 1) Apply to session first
+  applyActiveChangeSession(change);
+
+  // 2) Update the template definition
+  const tpl = appState.templates.find(t => t.id === aw.templateId);
+  if (!tpl) return;
+
+  // Figure out which template row to touch
+  const idx = clamp(change.replaceIndex ?? aw.currentExerciseIndex, 0, aw.items.length - 1);
+  const awItem = aw.items[idx];
+  const ex = change.exercise;
+
+  // Preferred mapping via tplIndex
+  let tIndex = Number.isInteger(awItem?.tplIndex) ? awItem.tplIndex : null;
+
+  // Fallback mapping by visible order (best effort)
+  if (!Number.isInteger(tIndex)) {
+    // Try to map current AW index into template index if lengths match
+    tIndex = clamp(idx, 0, Math.max(0, (tpl.items.length - 1)));
+  }
+
+  if (change.mode === 'replace') {
+    // Replace the template row at tIndex; keep sets/rest choices
+    const safeIndex = clamp(tIndex, 0, Math.max(0, (tpl.items.length - 1)));
+    const tItem = tpl.items[safeIndex];
+    if (tItem) {
+      tItem.exerciseId = ex.id;
+      tItem.name = ex.name;
+      tItem.muscleGroup = ex.muscleGroup;
+      tItem.type = ex.type || tItem.type || 'accessory';
+      // keep tItem.sets, tItem.restMode, tItem.restSec as user originally defined
+    }
+    // keep awItem.tplIndex as safeIndex
+    awItem.tplIndex = safeIndex;
+
+    persistState();
+    renderTemplatesList();
+    showToast('Template updated');
+  } else {
+    // Add a new row to the template after the mapped index
+    const anchorIndex = Number.isInteger(tIndex) ? tIndex : (tpl.items.length - 1);
+    const insertAt = clamp(anchorIndex + 1, 0, tpl.items.length);
+
+    const newTplItem = {
+      exerciseId: ex.id,
+      name: ex.name,
+      muscleGroup: ex.muscleGroup,
+      sets: 3,
+      type: ex.type || 'accessory',
+      restMode: 'auto',
+      restSec: null
+    };
+    tpl.items.splice(insertAt, 0, newTplItem);
+
+    // Update tplIndex mapping for AW items that pointed to rows at/after insert
+    aw.items.forEach(it => {
+      if (Number.isInteger(it.tplIndex) && it.tplIndex >= insertAt) it.tplIndex++;
+    });
+
+    // The session item we just inserted (at currentIndex+1) should map to the new row
+    const sessionInsertAt = aw.currentExerciseIndex + 1;
+    if (aw.items[sessionInsertAt]) {
+      aw.items[sessionInsertAt].tplIndex = insertAt;
+    }
+
+    // Adding invalidates prior completion prompt state
+    aw.completionPromptShown = false;
+
+    persistState();
+    renderTemplatesList();
+    showToast('Added to template');
+  }
 }
 
 /* ---------- Exercise: progress ---------- */
@@ -1606,6 +2280,7 @@ function renderQuickAddFavorites() {
           <button class="btn-text" onclick="toggleQuickAdjust('${meal.id}','meal')"><i class="bi bi-chevron-down"></i></button>
         </div>
       </div>
+      <div class="activity-time">${Math.round(meal.perServingTotals.calories)} kcal • P ${Math.round(meal.perServingTotals.protein)}g • C ${Math.round(meal.perServingTotals.carbs)}g • F ${Math.round(meal.perServingTotals.fat)}g • per 1 serving</div>
       <div id="qa-adjust-meal-${meal.id}" class="adjust-row" style="display:none;">
         <div class="input-row">
           <div class="input-mini">
@@ -2097,6 +2772,8 @@ function handleProfileSave(e) {
 }
 
 /* Weight logging */
+function showDietModal() { document.getElementById('dietModal')?.classList.add('show'); }
+function closeDietModal() { document.getElementById('dietModal')?.classList.remove('show'); }
 function showWeightModal() { document.getElementById('weightModal')?.classList.add('show'); }
 function closeWeightModal() { document.getElementById('weightModal')?.classList.remove('show'); }
 function handleWeightLog(e) {
@@ -2168,9 +2845,6 @@ window.closeSettings = closeSettings;
 window.showDietModal = showDietModal;
 window.closeDietModal = closeDietModal;
 
-window.showExerciseModal = showExerciseModal;
-window.closeExerciseModal = closeExerciseModal;
-
 window.showTemplateModal = showTemplateModal;
 window.closeTemplateModal = closeTemplateModal;
 window.addExerciseToDraft = addExerciseToDraft;
@@ -2184,10 +2858,11 @@ window.handleTemplateSave = handleTemplateSave;
 window.editTemplate = editTemplate;
 window.duplicateTemplate = duplicateTemplate;
 window.deleteTemplate = deleteTemplate;
-window.useTemplate = useTemplate;
 
-window.addExerciseToSession = addExerciseToSession;
-window.addSet = addSet;
+// NEW: Swap bindings
+window.startSwapTemplateItem = startSwapTemplateItem;
+window.cancelSwapTemplateItem = cancelSwapTemplateItem;
+window.swapExerciseInDraft = swapExerciseInDraft;
 
 window.showWeightModal = showWeightModal;
 window.closeWeightModal = closeWeightModal;
@@ -2229,3 +2904,14 @@ window.addFoodToMealDraft = addFoodToMealDraft;
 window.removeMealItem = removeMealItem;
 window.changeMealItemQty = changeMealItemQty;
 window.changeMealItemUnit = changeMealItemUnit;
+
+// Active Workout — live edit (NEW)
+window.openActiveExercisePicker = openActiveExercisePicker;
+window.closeActiveExerciseModal = closeActiveExerciseModal;
+window.chooseExerciseForActive = chooseExerciseForActive;
+window.closeScopeModal = closeScopeModal;
+
+// NEW: completion prompt bindings
+window.openWorkoutCompleteModal = openWorkoutCompleteModal;
+window.closeWorkoutCompleteModal = closeWorkoutCompleteModal;
+window.handleAddMoreFromComplete = handleAddMoreFromComplete;
